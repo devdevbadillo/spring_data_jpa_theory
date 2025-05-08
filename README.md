@@ -23,13 +23,8 @@
     - [Claves Primarias](#claves-primarias)
         - [Claves simples](#claves-simples)
         - [Claves embebidas](#claves-embebidas)
-    - [Generación de claves](#generacion-de-claves)
-        - [Estrategia AUTO, IDENTITY, SEQUENCE, TABLE](#estrategias-de-generacion-de-claves)
     - [Mapeo de tipos de datos](#mapeo-de-tipo-de-datos)
     - [Columnas](#columns)
-        - [Propiedad de nulabilidad](#propiedad-nullable)
-        - [Propiedad de unicidad](#propiedad-unique)
-        - [Otras propiedades](#otras-propiedades)
     - [Mapeo de Tipos Embebidos](#mapeo-de-tipos-embebidos)
         - [La anotación @Embeddable](#anotacion-embeddable)
         - [La anotación @Embedded](#anotacion-embedded)
@@ -94,102 +89,476 @@
 
 <a id="que-es-jpa"></a>
 ## Qué es JPA?
+JPA, o Java Persistence API, es una especificación del API de Java para acceder, persistir y gestionar datos entre objetos Java (nuestra aplicación) y una base de datos relacional. En esencia, **JPA define un conjunto de interfaces y anotaciones que los desarrolladores utilizan para interactuar con las bases de datos** de una manera orientada a objetos
+
+> [!IMPORTANT]
+> Es crucial entender que JPA en sí misma no es una pieza de software que se descarga y ejecuta. Más bien, **define un estándar que las implementaciones (como Hibernate, EclipseLink, OpenJPA) deben seguir**.
+
+JPA se basa en el concepto de **Mapeo Objeto-Relacional**. Su objetivo principal es mapear las clases Java (entidades) a las tablas de una base de datos relacional, y las instancias de esas clases a las filas de esas tablas. Esto permite a los desarrolladores trabajar con objetos en su código Java sin tener que preocuparse directamente por el lenguaje SQL subyacente.
 
 <a id="interfaces-centrales-en-jpa"></a>
 ### Interfaces centrales en JPA
+Dentro de la especificación de JPA, existen algunas interfaces que son fundamentales para interactuar con la persistencia de datos. Dos de las más importantes son EntityManagerFactory y EntityManager
 
 <a id="entity-manager-factory"></a>
 #### EntityManagerFactory
+La interfaz EntityManagerFactory es responsable de crear instancias de EntityManager. 
+
+La creación de un EntityManagerFactory suele ser una operación costosa en términos de recursos, ya que implica la lectura de la configuración, la inicialización de la conexión a la base de datos y la configuración del proveedor de JPA. Por esta razón, debería ser creada una sola vez (por unidad de persistencia) y compartida a lo largo de la vida de la aplicación
 
 <a id="entity-manager"></a>
 #### EntityManager
+La interfaz EntityManager es la interfaz principal para **interactuar con el contexto de persistencia**. Es a través de una instancia de EntityManager que se realizan las operaciones de persistencia sobre las entidades definidas en la aplicación.
+
+
+> [!NOTE]
+> 1. Un EntityManager generalmente se asocia con una unidad de trabajo o una transacción. Es una instancia de corta duración que se crea cuando se necesita realizar operaciones de base de datos y se cierra una vez que la unidad de trabajo se completa
+> 2. El EntityManager es responsable de gestionar el ciclo de vida de las entidades en el contexto de persistencia. Este contexto actúa como una caché de primer nivel, rastreando los cambios realizados en las entidades gestionadas.
+
 
 <a id="provedores-de-jpa"></a>
 ### Proveedores de JPA
+Como se ha mencionado, JPA es una especificación. Para que JPA funcione en tu aplicación, necesitas una **implementación concreta de esta especificación, lo que se conoce como un proveedor de JPA**. Estos proveedores son los que realmente se encargan de traducir las operaciones de JPA a las operaciones específicas del motor de base de datos.
 
 <a id="hibernate"></a>
 #### Hibernate
+Hibernate es uno de los proveedores de JPA más populares y maduros. Aunque existía antes de la especificación de JPA, adoptó JPA y ahora es una implementación completa y ampliamente utilizada.
+
+> [!NOTE]
+> - En el ecosistema de Spring, Hibernate suele ser el proveedor de JPA predeterminado y se integra muy bien con Spring Data JPA.
+> - Hibernate ofrece una gran cantidad de características más allá de lo que especifica JPA, como su propio lenguaje de consultas (HQL), potentes mecanismos de caching (primer y segundo nivel), optimización de consultas, interceptores y listeners específicos de Hibernate, y soporte para mapeos avanzados
 
 <a id="open-jpa"></a>
 #### OpenJPA
+Apache OpenJPA es otro proveedor de JPA de código abierto desarrollado bajo la sombrilla de la Apache Software Foundation. OpenJPA implementa completamente la especificación de JPA y está diseñado para ser flexible y extensible, permitiendo a los desarrolladores personalizar su comportamiento a través de plugins y extensiones.
 
 <a id="orm"></a>
 ## Mapeo Objeto-Relacional (ORM)
 
+El Mapeo Objeto-Relacional (ORM) es el corazón de JPA. Es la técnica que permite **traducir los datos entre el modelo de objetos de la aplicación Java y el modelo relacional de una base de datos**. JPA facilita este mapeo a través de una serie de anotaciones y configuraciones.
+
 <a id="anotaciones-basicas"></a>
 ### Anotaciones básicas
+Las anotaciones básicas son las que **se utilizan directamente en las clases Java (entidades)** para definir cómo se mapean a las tablas de la base de datos y cómo se gestionan sus propiedades.
 
 <a id="la-anotacion-entity"></a>
 #### La anotación @Entity
+La anotación @Entity es fundamental. Se aplica a una clase Java para marcarla como una entidad, lo que **significa que representa una tabla en la base de datos**.
+
+> [!IMPORTANT]
+> - Cualquier clase que se quiera persistir utilizando JPA debe estar anotada con @Entity
+> - Por defecto, el nombre de la entidad es el mismo que el nombre de la clase (sin el nombre del paquete). Es posible especificar un nombre diferente utilizando el atributo name de la anotación, por ejemplo: @Entity(name = "UsuarioSistema"). **Este nombre se utiliza en las consultas JPQL**.
+> - La clase anotada con @Entity debe ser una clase de nivel superior y no puede ser abstracta
+> - La entidad debe tener un constructor sin argumentos (puede ser público o protegido). Esto es necesario para que el proveedor de JPA pueda instanciar objetos de la entidad.
+
+```
+@Entity
+public class User{
+  // Metodos y atributos...
+  // Getter y setters...
+}
+```
 
 <a id="la-anotacion-table"></a>
 #### La anotación @Table
+La anotación @Table se utiliza a nivel de clase (junto con @Entity) para **especificar los detalles de la tabla de la base de datos a la que se mapea la entidad**.
+
+> Atributos
+1. name: Especifica el nombre de la tabla en la base de datos. Es obligatorio si quieres usar un nombre diferente al de la entidad. Ejemplo: @Table(name = "TB_USUARIOS")
+2. schema: Especifica el nombre del esquema de la base de datos al que pertenece la tabla. Ejemplo: @Table(name = "TB_USUARIOS", schema = "public")
+3. catalog: Especifica el nombre del catálogo de la base de datos al que pertenece la tabla
+4. uniqueConstraints: Permite definir restricciones de unicidad a nivel de tabla, especificando las columnas que deben ser únicas (pueden ser combinaciones de columnas)
+   
+```
+@Table(name = "TB_USUARIOS",
+       uniqueConstraints = {@UniqueConstraint(columnNames = {"email"}),
+                            @UniqueConstraint(columnNames = {"nombreUsuario"})})
+```
 
 <a id="id-y-generated-value"></a>
 #### Las anotaciones @Id y @GeneratedValued
+1. La anotación @Id se aplica a un atributo de la entidad para **marcarlo como la clave primaria de la tabla correspondiente**. Cada entidad debe tener al menos un atributo anotado con @Id.
+
+> [!IMPORTANT]
+> El tipo de datos del atributo @Id debe ser un tipo primitivo, su correspondiente wrapper, java.lang.String, java.util.Date, java.sql.Date, java.math.BigDecimal, etc., o un tipo serializable.
+
+2. La anotación @GeneratedValue se utiliza junto con @Id para especificar la estrategia de generación de valores para la clave primaria.
+
+> Estrategias de Generación
+> 
+> - GenerationType.AUTO: El proveedor de JPA elige una estrategia de generación apropiada basándose en las capacidades de la base de datos subyacente. Es la opción por defecto.
+> - GenerationType.IDENTITY: La base de datos genera el valor automáticamente (por ejemplo, a través de una columna autoincremental en MySQL o PostgreSQL). JPA recupera el valor generado después de la inserción.
+> - GenerationType.SEQUENCE: La base de datos genera el valor a partir de una secuencia (común en Oracle y PostgreSQL). Se puede especificar el nombre de la secuencia mediante el atributo generator y la anotación @SequenceGenerator
+> - GenerationType.TABLE: JPA utiliza una tabla separada en la base de datos para simular la generación de secuencias. Se puede especificar el nombre de la tabla y otros detalles mediante el atributo generator y la anotación @TableGenerator
+
+> Ejemplo
+```
+@Entity
+@Table(name = "productos")
+public class Producto {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    // ... otros atributos ...
+}
+```
 
 <a id="la-anotacion-basic"></a>
 #### La anotación @Basic
+La anotación @Basic se utiliza para **mapear un atributo de la entidad a una columna de la tabla de la base de datos**. Es la anotación por defecto para los atributos que no están anotados con otras anotaciones de mapeo (como @Id, @OneToMany, etc).
+
+> Atributos
+> 
+> - fetch: Especifica la estrategia de fetching para este atributo. Puede ser FetchType.LAZY (cargar el valor solo cuando se accede a él) o FetchType.EAGER (cargar el valor inmediatamente al cargar la entidad). Por defecto es FetchType.EAGER para los tipos básicos.
+> - optional: Indica si el valor de este atributo puede ser nulo en la base de datos. Por defecto es true (puede ser nulo). Si se establece en false, se intentará crear una restricción NOT NULL en la columna de la base de datos (dependiendo del proveedor y la configuración).
+
+> Ejemplo
+
+```
+@Entity
+public class Usuario {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Basic
+    private String nombre;
+
+    @Basic(fetch = FetchType.LAZY)
+    private String detallesAdicionales;
+
+    @Basic(optional = false)
+    private String email;
+
+    // ... otros atributos ...
+}
+```
 
 <a id="la-anotacion-temporal"></a>
 #### La anotación @Temporal
+La anotación @Temporal se utiliza para **especificar la precisión del tipo de datos java.util.Date o java.util.Calendar cuando se mapea a una columna de fecha/hora en la base de datos**.
+
+El atributo value de @Temporal puede tomar uno de los siguientes valores:
+ - TemporalType.DATE: Mapea solo la parte de la fecha (año, mes, día)
+ - TemporalType.TIME: Mapea solo la parte de la hora (horas, minutos, segundos)
+ - TemporalType.TIMESTAMP: Mapea tanto la fecha como la hora, con precisión de milisegundos (dependiendo de la base de datos)
+
+> Ejemplo
+```
+@Entity
+public class Evento {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Temporal(TemporalType.DATE)
+    private java.util.Date fechaEvento;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    private java.util.Date horaInicio;
+
+    // ... otros atributos ...
+}
+```
 
 <a id="la-anotacion-enumerated"></a>
 #### La anotación @Enumerated
+La anotación @Enumerated se utiliza para **mapear un atributo de tipo enumerado (enum) a una columna de la base de datos**.
+
+Estrategias de mapeo: 
+- EnumType.ORDINAL:El enum se mapea a su valor ordinal (la posición del enum en su declaración, comenzando desde 0). No se recomienda generalmente ya que **si se cambia el orden de los enums, los datos existentes en la base de datos se volverán incorrectos**.
+- EnumType.STRING: El enum se mapea a su nombre como una cadena de texto. Se recomienda generalmente ya que es más robusto a los cambios en la declaración del enum.
+
+> Ejemplo
+```
+public enum EstadoPedido {
+    PENDIENTE, PROCESANDO, ENVIADO, ENTREGADO, CANCELADO
+}
+
+@Entity
+public class Pedido {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Enumerated(EnumType.STRING)
+    private EstadoPedido estado;
+
+    // ... otros atributos ...
+}
+```
 
 <a id="la-anotacion-lob"></a>
 #### La anotación @Lob
+La anotación @Lob se utiliza para mapear atributos de gran tamaño (Large Objects) a los tipos de datos BLOB (Binary Large Object) o CLOB (Character Large Object) de la base de datos.
+
+@Lob se puede aplicar a los siguientes tipos de datos Java:
+1. byte[] o java.sql.Blob para mapear a BLOB.
+2. char[], java.lang.String o java.sql.Clob para mapear a CLOB.
+
+> Ejemplo
+```
+@Entity
+public class Documento {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Lob
+    private byte[] contenidoBinario;
+
+    @Lob
+    private String textoLargo;
+
+    // ... otros atributos ...
+}
+```
 
 <a id="la-anotacion-transient"></a>
 #### La anotación @Transient
 
+La anotación @Transient se utiliza para marcar **un atributo de una entidad que no debe ser persistido en la base de datos**. Es decir, este atributo existirá en la instancia del objeto Java, pero JPA ignorará este campo durante las operaciones de persistencia
+
+> Ejemplo
+```
+@Entity
+public class Usuario {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nombre;
+    private String apellido;
+
+    @Transient
+    private String nombreCompleto; // No se persistirá
+
+    // ... otros métodos ...
+}
+```
+
 <a id="claves-primarias"></a>
 ### Claves Primarias
+La clave primaria es un atributo (o un conjunto de atributos) que identifica de forma única cada fila en una tabla de la base de datos. En JPA, esto se mapea a través de la anotación @Id.
 
 <a id="claves-simples"></a>
 #### Claves simples
 
+### Generación de claves
+Una clave primaria simple es aquella que **está compuesta por una sola columna en la tabla de la base de datos** y se mapea a un único atributo en la entidad Java anotado con @Id.
+
+> [!NOTE]
+> Ya se han visto ejemplos de claves primarias simples con la anotación @GeneratedValue.
+
 <a id="claves-embebidas"></a>
 #### Claves embebidas
+Una clave primaria embebida se utiliza cuando **la clave primaria de la tabla de la base de datos está compuesta por múltiples columnas**. En JPA, esto se logra utilizando la anotación @EmbeddedId en la entidad, junto con una clase separada anotada con @Embeddable que representa la clave primaria compuesta.
 
-<a id="generacion-de-claves"></a>
-### Generación de claves
+> Pasos para crear una clave embebida
 
-<a id="estrategias-de-generacion-de-claves"></a>
-#### Estrategia AUTO, IDENTITY, SEQUENCE, TABLE
+1. Se crea una clase separada que contiene los atributos que forman la clave primaria compuesta. Esta clase debe estar anotada con @Embeddable.
+  - Debe ser pública.
+  - Debe tener un constructor sin argumentos (público o protegido).
+  - Debe implementar la interfaz java.io.Serializable.
+  - Debe sobrescribir los métodos equals() y hashCode() basados en los valores de sus atributos.
+
+2. En la entidad, se declara un atributo del tipo de la clase @Embeddable y se anota con @EmbeddedId
+
+> Ejemplo
+```
+import java.io.Serializable;
+import javax.persistence.Embeddable;
+
+@Embeddable
+public class CuentaProyectoId implements Serializable {
+    private Long proyectoId;
+    private Long usuarioId;
+
+    // Constructores, getters, setters, equals(), hashCode() ...
+}
+
+@Entity
+public class CuentaProyecto {
+    @EmbeddedId
+    private CuentaProyectoId id;
+
+    // ... otros atributos ...
+}
+```
 
 <a id="mapeo-de-tipo-de-datos"></a>
 ### Mapeo de tipos de datos
+JPA se encarga de mapear los tipos de datos de los atributos de tus entidades Java a los tipos de datos correspondientes en las columnas de la base de datos.
+
+> [!NOTE]
+> 
+> Los tipos primitivos (como int, boolean, double) se mapean a columnas **NOT NULL** por defecto, mientras que sus **wrappers** (como Integer, Boolean, Double) permiten valores **NULL**.
+
+JPA permite definir convertidores personalizados (@Converter) para mapear tipos de datos Java que no tienen un mapeo estándar a los tipos de datos de la base de datos.
 
 <a id="columns"></a>
 ### Columnas
+La anotación @Column se utiliza para **personalizar el mapeo de un atributo de la entidad a una columna específica de la tabla** de la base de datos.
 
-<a id="propiedad-nullable"></a>
-#### Propiedad de nulabilidad
-
-<a id="propiedad-unique"></a>
-#### Propiedad de unicidad
-
-<a id="otras-propiedades"></a>
-#### Otras propiedades
+> Atributos Principales
+- name: Especifica el nombre de la columna en la base de datos. Si no se especifica, se utiliza el nombre del atributo de la entidad. Ejemplo: @Column(name = "nombre_usuario")
+- nullable: Especifica si la columna puede contener valores nulos. Por defecto es true. Ejemplo: @Column(nullable = false)
+- unique: Especifica si la columna debe tener una restricción de unicidad. Por defecto es false. Ejemplo: @Column(unique = true)
+- length: Especifica la longitud máxima de la columna para tipos String. Ejemplo: @Column(length = 255)
+- precision y scale: Se utilizan para tipos numéricos de precisión arbitraria (como BigDecimal) para especificar el número total de dígitos y el número de dígitos después del punto decimal, respectivamente
+- columnDefinition: Permite especificar la definición SQL completa de la columna. Esto proporciona la máxima flexibilidad pero reduce la portabilidad entre bases de datos. Ejemplo: @Column(columnDefinition = "VARCHAR(100) COLLATE utf8_bin")
+- insertable: Indica si la columna debe incluirse en las operaciones de inserción. Por defecto es true. Se puede usar para columnas calculadas o gestionadas por la base de datos
+- updatable: Indica si la columna debe incluirse en las operaciones de actualización. Por defecto es true. Se puede usar para columnas de solo lectura después de la inserción
 
 <a id="mapeo-de-tipos-embebidos"></a>
 ### Mapeo de Tipos Embebidos
+El mapeo de tipos embebidos permite **incrustar los atributos de una clase Java dentro de otra entidad**, de tal manera que las columnas correspondientes se crean en la tabla de la entidad que contiene el tipo embebido. Esto es útil para agrupar lógicamente atributos relacionados
 
 <a id="anotacion-embeddable"></a>
 #### La anotación @Embeddable
+La anotación @Embeddable se aplica a una clase Java para marcarla como un tipo embebible. Una clase anotada con @Embeddable no representa una entidad por sí misma y no tiene su propia tabla en la base de datos. **Sus atributos se mapean a las columnas de la tabla de la entidad que la referencia**.
 
 <a id="anotacion-embedded"></a>
 #### La anotación @Embedded
+La anotación @Embedded se utiliza en un atributo de una entidad para indicar que este **atributo es una instancia de una clase anotada con @Embeddable**. Los atributos de la clase embebible se mapearán a columnas en la tabla de la entidad contenedora.
+
+Por defecto, los nombres de las columnas generadas para los atributos de la clase embebible serán los mismos que los nombres de los atributos de la clase embebible. Sin embargo, se puede utilizar la anotación @AttributeOverrides (y su anotación interna @AttributeOverride) para especificar nombres de columna diferentes o para sobrescribir la configuración de las columnas heredadas del @Embeddable
+
+```
+import javax.persistence.Embeddable;
+import javax.persistence.Column;
+
+@Embeddable
+public class Direccion {
+    @Column(name = "calle")
+    private String calle;
+    private String ciudad;
+    private String codigoPostal;
+
+    // Constructores, getters, setters ...
+}
+
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Embedded;
+import javax.persistence.AttributeOverrides;
+import javax.persistence.AttributeOverride;
+
+@Entity
+public class Cliente {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nombre;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "calle", column = @Column(name = "direccion_calle", length = 100)),
+        @AttributeOverride(name = "codigoPostal", column = @Column(name = "zip_code"))
+    })
+    private Direccion direccion;
+
+    // ... otros atributos ...
+}
+```
+
+En este ejemplo, la clase **Direccion** está marcada como @Embeddable. En la entidad **Cliente**, el atributo direccion está anotado con @Embedded, lo que significa que los atributos calle, ciudad y codigoPostal de Direccion se mapearán a las columnas direccion_calle, ciudad y zip_code en la tabla Cliente, respectivamente (notar cómo @AttributeOverrides se usa para personalizar los nombres de las columnas de calle y codigoPostal).
 
 <a id="mapeo-de-colecciones"></a>
 ### Mapeo de colecciones
 
+JPA permite mapear colecciones de tipos básicos (como List<String>, Set<Integer>) o colecciones de tipos embebidos. Esto se logra con la anotación @ElementCollection
+
 <a id="anotacion-element-collection"></a>
 #### La anotación @ElementCollection
+La anotación @ElementCollection se utiliza para mapear una colección de instancias de un tipo embebible o de un tipo básico (como String, Integer, Date). Por defecto, los elementos de la colección se persistirán en una tabla separada.
+
+> [!IMPORTANT]
+> - @ElementCollection generalmente requiere una tabla join para almacenar los elementos de la colección, ya que no forman parte directamente de la tabla de la entidad propietaria.
+> - La tabla join tendrá una clave foránea que referencia la clave primaria de la entidad propietaria.
+
 
 <a id="anotacion-collection-table"></a>
 #### La anotación @CollectionTable
+La anotación @CollectionTable **se utiliza junto con @ElementCollection** para especificar los detalles de la tabla join que se utilizará para almacenar la colección de elementos.
+
+> Atributos de la anotación
+- name: Especifica el nombre de la tabla join.
+- schema: Especifica el esquema de la tabla join.
+- catalog: Especifica el catálogo de la tabla join.
+- joinColumns: Permite especificar las columnas de la tabla join que se utilizarán como clave foránea para referenciar la entidad propietaria. Se utiliza la anotación @JoinColumn dentro de @JoinColumns
+
+> Ejemplo(colección de tipos básicos)
+```
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.ElementCollection;
+import javax.persistence.CollectionTable;
+import javax.persistence.Column;
+import javax.persistence.JoinColumn;
+import java.util.List;
+
+@Entity
+public class Usuario {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nombre;
+
+    @ElementCollection
+    @CollectionTable(name = "telefonos_usuario", joinColumns = @JoinColumn(name = "usuario_id"))
+    @Column(name = "telefono")
+    private List<String> telefonos;
+
+    // ... otros atributos ...
+}
+```
+En este ejemplo, la lista de teléfonos del usuario se mapea a una tabla llamada telefonos_usuario. Esta tabla tiene una columna usuario_id que es una clave foránea a la tabla Usuario, y una columna telefono para almacenar cada número de teléfono.
+
+> Ejemplo (colección de tipos embebidos)
+
+```
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.ElementCollection;
+import javax.persistence.CollectionTable;
+import javax.persistence.JoinColumn;
+import javax.persistence.Embedded;
+import java.util.List;
+
+@Embeddable
+public class DireccionEntrega {
+    private String calle;
+    private String ciudad;
+    private String codigoPostal;
+
+    // Constructores, getters, setters ...
+}
+
+@Entity
+public class Pedido {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ElementCollection
+    @CollectionTable(name = "direcciones_entrega_pedido", joinColumns = @JoinColumn(name = "pedido_id"))
+    @Embedded
+    private List<DireccionEntrega> direccionesEntrega;
+
+    // ... otros atributos ...
+}
+```
+Aquí, la lista de direcciones de entrega (que son tipos embebidos) se mapea a la tabla direcciones_entrega_pedido, con una clave foránea pedido_id y las columnas correspondientes a los atributos de DireccionEntrega (calle, ciudad, codigoPostal).
 
 <a id="relacion-entre-entidades"></a>
 ### Relaciones entre entidades
