@@ -562,42 +562,302 @@ Aquí, la lista de direcciones de entrega (que son tipos embebidos) se mapea a l
 
 <a id="relacion-entre-entidades"></a>
 ### Relaciones entre entidades
+En el mundo de las bases de datos relacionales, las relaciones se definen a través de claves foráneas. En JPA, estas relaciones entre tablas se representan como asociaciones entre las entidades Java. **JPA proporciona varias anotaciones para definir estas relaciones**.
 
 <a id="relaciones-unidireccionales-y-bidireccionales"></a>
 #### Relaciones unidireccionales y bidireccionales
+La direccionalidad de una relación define si se puede navegar desde una entidad a la otra.
+
+> Relación unidireccional
+
+En una relación unidireccional, la navegación solo es posible en una dirección. Por ejemplo, si se tiene una entidad **Pedido** que tiene una referencia a una entidad **Cliente**, **es posible acceder al cliente desde el pedido**, pero **no se puede navegar directamente desde el cliente a todos sus pedidos** (a menos que se defina explícitamente la relación en la entidad **Cliente**).
+
+En JPA, una relación unidireccional se define incluyendo un atributo de la entidad relacionada en la entidad fuente y anotándolo con la anotación de relación apropiada (@ManyToOne, @OneToOne, @OneToMany, @ManyToMany) **sin una propiedad de "mappedBy"**.
+
+> Ejemplo
+
+```
+@Entity
+public class Cliente {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+    // ...
+}
+
+@Entity
+public class Pedido {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private Date fechaPedido;
+
+    @ManyToOne
+    @JoinColumn(name = "cliente_id")
+    private Cliente cliente;
+
+    // ...
+}
+```
+En este caso, desde un objeto Pedido, se puede acceder al Cliente asociado a través del atributo cliente. Sin embargo, desde un objeto Cliente, no se tiene directamente acceso a la lista de Pedidos asociados.
+
+> Relación bidireccional
+
+En una relación bidireccional, la navegación es posible en ambas direcciones. Esto se logra definiendo la relación en ambas entidades. Una de las entidades será la dueña de la relación (la que contiene la información de la clave foránea en su tabla), y la otra tendrá una referencia a la primera y estará marcada como la inversa de la relación utilizando el atributo mappedBy en la anotación de la relación. 
+
+> [!IMPORTANT]
+> - El valor de mappedBy debe ser el nombre del atributo en la entidad dueña que representa la relación
+
+```
+@Entity
+public class Cliente {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+
+    @OneToMany(mappedBy = "cliente")
+    private List<Pedido> pedidos;
+
+    // ...
+}
+
+@Entity
+public class Pedido {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private Date fechaPedido;
+
+    @ManyToOne
+    @JoinColumn(name = "cliente_id")
+    private Cliente cliente;
+
+    // ...
+}
+```
+La entidad Pedido es la dueña de la relación (contiene la clave foránea cliente_id). La entidad Cliente tiene una colección de Pedidos y utiliza mappedBy = "cliente" para indicar que esta es la parte inversa de la relación, donde "cliente" es el nombre del atributo en la entidad Pedido que mapea hacia Cliente.
 
 <a id="cardinalidad"></a>
 ### Cardinalidad
+La cardinalidad se refiere al número de instancias de una entidad que pueden estar relacionadas con el número de instancias de otra entidad.
 
 <a id="uno-a-uno"></a>
 #### Uno-a-Uno
+Una instancia de una entidad está relacionada con como máximo una instancia de otra entidad, y viceversa.
+
+> Ejemplo
+```
+@Entity
+public class Usuario {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombreUsuario;
+
+    @OneToOne(mappedBy = "usuario")
+    private CuentaDetalle cuentaDetalle;
+
+    // ...
+}
+
+@Entity
+public class CuentaDetalle {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private Date fechaCreacion;
+
+    @OneToOne
+    @JoinColumn(name = "usuario_id", unique = true)
+    private Usuario usuario;
+
+    // ...
+}
+```
+
+Un Usuario puede tener una CuentaDetalle, y una CuentaDetalle pertenece a un Usuario
 
 <a id="uno-a-muchos"></a>
 #### Uno-a-Muchos
+Una instancia de una entidad puede estar relacionada con muchas instancias de otra entidad, mientras que cada instancia de la segunda entidad está relacionada con una sola instancia de la primera. Estas dos anotaciones siempre trabajan juntas en una relación bidireccional. En una relación unidireccional, solo se usa @OneToMany.
+
+1. Unidireccional (@OneToMany): Una entidad tiene una colección de otras entidades. La tabla de la entidad referenciada tendrá una clave foránea a la tabla de la entidad que contiene la colección.
+   
+```
+@Entity
+public class Departamento {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+
+    @OneToMany
+    @JoinColumn(name = "departamento_id") // La tabla Empleado tendrá esta columna
+    private List<Empleado> empleados;
+
+    // ...
+}
+
+@Entity
+public class Empleado {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+    // ...
+}
+```
+
+2. Bidireccional (@OneToMany con mappedBy en la entidad que tiene la colección, y @ManyToOne en la otra entidad)
+
+```
+@Entity
+public class Departamento {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+
+    @OneToMany(mappedBy = "departamento")
+    private List<Empleado> empleados;
+
+    // ...
+}
+
+@Entity
+public class Empleado {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+
+    @ManyToOne
+    @JoinColumn(name = "departamento_id")
+    private Departamento departamento;
+
+    // ...
+}
+```
 
 <a id="muchos-a-uno"></a>
 #### Muchos-a-Uno
+Ya cubierto en la relación Uno-a-Muchos. Desde la perspectiva de la entidad "muchos", cada instancia se relaciona con una instancia de la entidad "uno"
 
 <a id="muchos-a-muchos"></a>
 #### Muchos-a-Muchos
+Muchas instancias de una entidad pueden estar relacionadas con muchas instancias de otra entidad. En la base de datos, esto se implementa típicamente mediante una tabla de unión (o tabla intermedia) que contiene las claves foráneas de ambas tablas relacionadas.
+```
+@Entity
+public class Estudiante {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
 
+    @ManyToMany
+    @JoinTable(
+        name = "inscripciones",
+        joinColumns = @JoinColumn(name = "estudiante_id"),
+        inverseJoinColumns = @JoinColumn(name = "curso_id")
+    )
+    private List<Curso> cursos;
+
+    // ...
+}
+
+@Entity
+public class Curso {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombreCurso;
+
+    @ManyToMany(mappedBy = "cursos")
+    private List<Estudiante> estudiantes;
+
+    // ...
+}
+```
+Un Estudiante puede inscribirse en muchos Cursos, y un Curso puede tener muchos Estudiantes.
+Aquí, la tabla inscripciones se crea con las columnas estudiante_id y curso_id como claves foráneas a las tablas Estudiante y Curso, respectivamente. La entidad Estudiante es la dueña de la relación (define la @JoinTable)
+ 
 <a id="estrategia-de-fetching"></a>
 ### Estrategias de Fetching
+El fetching se refiere a cómo JPA carga las entidades relacionadas desde la base de datos. 
+
+La estrategia de fetching se configura en las anotaciones de las relaciones (@OneToOne, @OneToMany, @ManyToOne, @ManyToMany) utilizando el atributo fetch. Por defecto, las relaciones @OneToOne y @ManyToOne suelen ser EAGER, mientras que las relaciones @OneToMany y @ManyToMany suelen ser LAZY. Sin embargo, estas son solo las estrategias por defecto y pueden ser explícitamente configuradas.
 
 <a id="carga-perezosa"></a>
 #### Carga Perezosa (Lazy)
+Con la carga perezosa, las entidades relacionadas **no se cargan inmediatamente** cuando se carga la entidad principal. En su lugar, se crea un proxy (un objeto sustituto) para la entidad relacionada. Los datos reales de la entidad relacionada solo se cargarán cuando se acceda por primera vez a la relación (por ejemplo, al llamar a un getter del atributo de la relación)
 
 <a id="carga-ansiosa"></a>
 #### Carga Ansiosa (Eager)
+Con la carga ansiosa, **las entidades relacionadas se cargan inmediatamente** junto con la entidad principal en la misma consulta (generalmente mediante un JOIN en SQL).
 
 <a id="operaciones-en-casacada"></a>
 ### Operaciones en cascada
+Las operaciones en cascada definen cómo las operaciones de persistencia (como persist, remove, merge, refresh, detach, all) realizadas en una entidad se propagan a las entidades relacionadas. La cascada se configura en las anotaciones de las relaciones utilizando el atributo cascade (que acepta un array de valores de la enumeración CascadeType)
+
+> Valores de CascadeType:
+
+- CascadeType.PERSIST: Cuando se persiste la entidad propietaria, también se persisten las entidades relacionadas que aún no están persistidas.
+- CascadeType.MERGE: Cuando se fusiona el estado de la entidad propietaria, también se fusiona el estado de las entidades relacionadas.
+- CascadeType.REMOVE: Cuando se elimina la entidad propietaria, también se eliminan las entidades relacionadas (ten cuidado con esto, ya que puede llevar a la pérdida de datos si las entidades relacionadas son referenciadas por otras entidades).
+- CascadeType.REFRESH: Cuando se actualiza (refresh) el estado de la entidad propietaria desde la base de datos, también se actualiza el estado de las entidades relacionadas.
+- CascadeType.DETACH: Cuando se desasocia (detach) la entidad propietaria del contexto de persistencia, también se desasocian las entidades relacionadas.
+- CascadeType.ALL: Aplica todas las operaciones de cascada (PERSIST, MERGE, REMOVE, REFRESH, DETACH).
+
+> Ejemplo
+```
+@Entity
+public class Padre {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+
+    @OneToMany(mappedBy = "padre", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Hijo> hijos;
+
+    // ...
+}
+
+@Entity
+public class Hijo {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nombre;
+
+    @ManyToOne
+    @JoinColumn(name = "padre_id")
+    private Padre padre;
+
+    // ...
+}
+```
+En este ejemplo, si se persiste un objeto Padre, todos los objetos Hijo asociados en su lista hijos también se persistirán automáticamente (CascadeType.PERSIST está implícito en CascadeType.ALL). Si se elimina el Padre, todos los Hijos asociados también se eliminarán (CascadeType.REMOVE en CascadeType.ALL). La opción orphanRemoval = true en @OneToMany también asegura que si un Hijo se remueve de la lista hijos del Padre, también se eliminará de la base de datos (si no es referenciado por otra entidad)
 
 <a id="consultas-y-recuperacion-de-datos"></a>
 ## Consultas y recuperación de datos
+JPA ofrece varias formas de consultar y recuperar datos de la base de datos. Las principales son JPQL (Java Persistence Query Language), la API de Criterios y las Consultas Nativas (SQL directo).
 
 <a id="jpql"></a>
 ### Java Persistence Query Language (JPQL)
+JPQL es un lenguaje de consultas orientado a objetos definido por la especificación JPA. Se asemeja a SQL pero opera sobre las entidades y sus atributos en lugar de directamente sobre las tablas y columnas de la base de datos. Esto proporciona un mayor nivel de abstracción y portabilidad.
+
+> Ejemplo
+```
+SELECT [DISTINCT] objeto_seleccionado
+FROM entidad [AS alias] [[INNER|LEFT|RIGHT] JOIN [FETCH] asociación [AS alias_asociación]]*
+[WHERE condición]
+[GROUP BY atributos]
+[HAVING condición_grupo]
+[ORDER BY atributos [ASC|DESC]*]
+```
 
 <a id="sintaxis-de-jpql"></a>
 #### Sintaxis Básica
@@ -605,23 +865,128 @@ Aquí, la lista de direcciones de entrega (que son tipos embebidos) se mapea a l
 <a id="sentencias-basicas"></a>
 ##### Sentencias básicas SELECT, FROM, WHERE, ORDER BY, GROUP BY, HAVING
 
+- SELECT: Especifica las entidades o los atributos que se van a recuperar. Se puede seleccionar una entidad completa (SELECT p FROM Producto p), un atributo específico (SELECT p.nombre FROM Producto p), o múltiples atributos (SELECT p.nombre, p.precio FROM Producto p). La palabra clave DISTINCT se puede usar para eliminar resultados duplicados.
+
+- FROM: Especifica la entidad (o entidades) sobre la cual se realiza la consulta. Se requiere un alias para referirse a la entidad en el resto de la consulta (FROM Producto p).
+
+- WHERE: Filtra los resultados de la consulta basándose en una o más condiciones. Las condiciones pueden involucrar atributos de la entidad, parámetros, funciones y operadores.
+
+```
+  SELECT p FROM Producto p WHERE p.precio > 100 AND p.categoria = 'Electrónicos'
+```
+
+- ORDER BY: Especifica el orden en el que se deben devolver los resultados. Es posible ordenar por uno o más atributos, en orden ascendente (ASC, por defecto) o descendente (DESC).
+```
+  SELECT p FROM Producto p ORDER BY p.precio DESC, p.nombre ASC
+```
+
+- GROUP BY: Agrupa los resultados basándose en los valores de uno o más atributos. Se utiliza a menudo con funciones agregadas.
+```
+  SELECT c.categoria, COUNT(p) FROM Producto p JOIN p.categoria c GROUP BY c.categoria
+```
+
+- HAVING: Filtra los resultados de los grupos creados por la cláusula GROUP BY. Se utiliza para aplicar condiciones a los grupos.
+```
+  SELECT c.categoria, COUNT(p) FROM Producto p JOIN p.categoria c GROUP BY c.categoria HAVING COUNT(p) > 10
+```
+
 <a id="consultas-con-parametros"></a>
 #### Consultas con Parámetros
+Las consultas con parámetros sirve para escribir consultas más flexibles y seguras (previniendo la inyección SQL), JPQL permite el uso de parámetros. Hay dos tipos de parámetros:
+
+1. Parámetros Posicionales:
+   
+Se identifican por su posición en la consulta, precedidos por un signo de interrogación (?1, ?2, etc.). El índice comienza en 1.
+
+```
+SELECT p FROM Producto p WHERE p.precio > ?1 AND p.categoria = ?2
+```
+
+- Para establecer los valores, se utiliza el método setParameter(int position, Object value) del objeto Query.
+
+2. Parámetros con Nombre: Se identifican por un nombre precedido por dos puntos (:nombreParametro).
+   
+```
+SELECT p FROM Producto p WHERE p.precio > :precioMinimo AND p.categoria = :categoria
+```
+Para establecer los valores, se utiliza el método setParameter(String name, Object value) del objeto Query.
 
 <a id="funciones-y-operadores"></a>
 #### Funciones y Operadores
+JPQL soporta una variedad de funciones y operadores que se pueden utilizar en las cláusulas WHERE y HAVING.
 
 <a id="funciones-agregadas"></a>
 ##### Funciones agregadas
+Las funciones agregadas operan sobre un conjunto de valores y devuelven un único valor. Las funciones agregadas comunes incluyen:
+
+- COUNT(): Devuelve el número de elementos. Puede usarse con * para contar todas las filas o con un atributo para contar los valores no nulos de ese atributo. COUNT(DISTINCT atributo) cuenta los valores distintos no nulos.
+- AVG(atributo): Devuelve el valor promedio de un atributo numérico.
+- SUM(atributo): Devuelve la suma de los valores de un atributo numérico.
+- MIN(atributo): Devuelve el valor mínimo de un atributo.
+- MAX(atributo): Devuelve el valor máximo de un atributo.
+
+> Ejemplo
+```
+SELECT AVG(p.precio) FROM Producto p WHERE p.categoria = 'Electrónicos'
+```
 
 <a id="funciones-de-cadena"></a>
 ##### Funciones de cadena
+Las funciones de cadena permiten manipular o comparar valores de tipo cadena:
+
+- CONCAT(cadena1, cadena2): Concatena dos cadenas.
+- SUBSTRING(cadena, inicio, longitud): Extrae una subcadena.
+- TRIM([LEADING|TRAILING|BOTH] [caracter] FROM cadena): Elimina espacios en blanco (o un carácter específico) al principio, al final o en ambos extremos de una cadena.
+- LOWER(cadena): Convierte una cadena a minúsculas.
+- UPPER(cadena): Convierte una cadena a mayúsculas.
+- LENGTH(cadena): Devuelve la longitud de una cadena.
+- LOCATE(subcadena, cadena [, inicio]): Devuelve la posición de la primera ocurrencia de una subcadena dentro de una cadena.
+
+> Ejemplo
+```
+SELECT u FROM Usuario u WHERE LOWER(u.nombre) = 'juan'
+```
 
 <a id="operadores-logicos-y-de-comparacion"></a>
 ##### Operadores lógicos y de comparación
 
+1. Operadores de Comparación:
+- =, >, <, >=, <=, <> o !=, [NOT] BETWEEN ... AND ..., [NOT] LIKE ..., [NOT] IN (...), IS [NOT] NULL, IS [NOT] EMPTY (para colecciones).
+```
+SELECT p FROM Producto p WHERE p.precio BETWEEN 50 AND 150
+SELECT u FROM Usuario u WHERE u.email LIKE '%@example.com'
+SELECT p FROM Producto p WHERE p.categoria IN ('Libros', 'Música')
+SELECT d FROM Departamento d WHERE d.empleados IS NOT EMPTY
+```
+
+2. Operadores Lógicos:
+- AND, OR, NOT
+```
+SELECT p FROM Producto p WHERE p.precio > 100 AND (p.categoria = 'Electrónicos' OR p.marca = 'Sony')
+```
+
 <a id="relaciones-en-jpql"></a>
 ### Relaciones en JPQL (JOIN, FETCH JOIN)
+JPQL permite navegar y consultar entidades relacionadas utilizando la cláusula JOIN.
+
+1. JOIN (INNER JOIN): Devuelve resultados solo cuando hay coincidencias en ambas entidades relacionadas.
+```
+SELECT p, c FROM Producto p JOIN p.categoria c WHERE c.nombre = 'Electrónicos'
+```
+
+2. LEFT JOIN (LEFT OUTER JOIN): Devuelve todos los resultados de la entidad de la izquierda (en el FROM o el lado izquierdo del JOIN) y los datos coincidentes de la entidad de la derecha. Si no hay coincidencia, los atributos de la entidad de la derecha serán NULL.
+```
+SELECT d, e FROM Departamento d LEFT JOIN d.empleados e
+```
+
+3. RIGHT JOIN (RIGHT OUTER JOIN): Similar a LEFT JOIN pero devuelve todos los resultados de la entidad de la derecha y los datos coincidentes de la izquierda.
+
+4. FETCH JOIN (JOIN FETCH): Se utiliza para cargar las entidades relacionadas de forma ansiosa (eagerly) en la misma consulta. Esto evita el problema del "N+1 select" que puede ocurrir con la carga perezosa.
+```
+SELECT p FROM Pedido p JOIN FETCH p.cliente WHERE p.id = :pedidoId
+```
+
+En este caso, al cargar el Pedido, también se cargará inmediatamente el Cliente asociado.
 
 <a id="consultas-dinamicas"></a>
 ### Consultas dinámicas
