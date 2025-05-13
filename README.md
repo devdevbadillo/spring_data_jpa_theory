@@ -990,90 +990,364 @@ En este caso, al cargar el Pedido, también se cargará inmediatamente el Client
 
 <a id="consultas-dinamicas"></a>
 ### Consultas dinámicas
+A veces, las condiciones de la consulta no se conocen en tiempo de compilación y deben construirse dinámicamente en tiempo de ejecución basándose en la entrada del usuario u otros factores. Si bien se pueden construir cadenas JPQL dinámicamente, esto puede ser propenso a errores y más difícil de mantener. La API de Criterios ofrece una forma más segura y orientada a objetos de construir consultas dinámicamente.
+
 
 <a id="criteria-api"></a>
 ### La API de Criterios (Criteria API)
+La API de Criterios proporciona una forma programática de construir consultas JPQL utilizando objetos Java en lugar de cadenas de texto. Esto ofrece beneficios como seguridad de tipos, detección de errores en tiempo de compilación (en muchos casos) y una estructura más orientada a objetos para construir consultas complejas
 
 <a id="construccion-de-consultas-programaticamente"></a>
 #### Construcción de consultas programáticamente
 
+La construcción de una consulta de criterios implica los siguientes pasos principales:
+
+1.  Obtener una instancia de CriteriaBuilder: Se obtiene del EntityManager.
+```
+    CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+```
+
+2. Crear una instancia de CriteriaQuery: Representa la consulta que se va a ejecutar. Se especifica el tipo de resultado esperado (por ejemplo, una entidad Producto).
+```
+    CriteriaQuery<Producto> cq = cb.createQuery(Producto.class);
+```
+
+3. Definir la raíz de la consulta (Root): Representa la entidad principal sobre la cual se está consultando (la entidad en la cláusula FROM de JPQL)
+```
+    Root<Producto> productoRoot = cq.from(Producto.class);
+```
+
+4. Seleccionar los resultados (Selection): Especifica qué se va a recuperar (la entidad raíz, un atributo, etc.).
+```
+    cq.select(productoRoot); // Para seleccionar la entidad completa
+    cq.select(productoRoot.get("nombre")); // Para seleccionar el atributo "nombre"
+```
+
+5. Agregar predicados (Predicate - para la cláusula WHERE): Se construyen utilizando métodos del CriteriaBuilder y se aplican a la CriteriaQuery
+```
+    Predicate precioMayorQue = cb.greaterThan(productoRoot.get("precio"), 100.0);
+    Predicate categoriaElectronicos = cb.equal(productoRoot.get("categoria"), "Electrónicos");
+    cq.where(cb.and(precioMayorQue, categoriaElectronicos));
+```
+
+6. Especificar el ordenamiento (Order - para la cláusula ORDER BY)
+```
+    cq.orderBy(cb.desc(productoRoot.get("precio")), cb.asc(productoRoot.get("nombre")));
+```
+
+7. Especificar la agrupación (Expression - para la cláusula GROUP BY) y la condición de grupo (Predicate - para la cláusula HAVING)
+```
+    Expression<String> categoriaExp = productoRoot.get("categoria");
+    cq.groupBy(categoriaExp);
+    cq.having(cb.greaterThan(cb.count(productoRoot), 10L));
+```
+
+8. Crear y ejecutar la consulta: Se crea una instancia de Query a partir de la CriteriaQuery y se ejecuta
+```
+   Query<Producto> query = entityManager.createQuery(cq);
+   List<Producto> resultados = query.getResultList();
+```
+
 <a id="predicados-ordenamiento-y-agrupacion"></a>
 #### Predicados, ordenamientos y agrupaciones
+Como se pudo observar, la API de Criterios utiliza objetos para **representar las diferentes partes** de una consulta:
+
+- Predicate: Representa una condición (como las de la cláusula WHERE o HAVING). Se construyen utilizando los métodos del CriteriaBuilder (por ejemplo, equal, greaterThan, lessThan, like, in, isNull, and, or, not).
+
+- Order: Representa un criterio de ordenamiento (para la cláusula ORDER BY). Se crean con cb.asc() para ascendente y cb.desc() para descendente, pasando la expresión del atributo por el cual ordenar.
+
+- Expression: Representa un atributo de la entidad o el resultado de una función (por ejemplo, para la cláusula GROUP BY o para funciones agregadas)
 
 <a id="consultas-con-relaciones"></a>
 #### Consultas con relaciones
+La API de Criterios también permite **navegar y realizar joins entre entidades relacionadas** utilizando el método join() de la raíz (Root) o de un join existente. Se pueden especificar diferentes tipos de joins (INNER, LEFT, RIGHT) utilizando los métodos correspondientes (join(atributo, JoinType.INNER), join(atributo, JoinType.LEFT), etc.). Para realizar un FETCH JOIN, se utiliza el método fetch().
+
+
+> Ejemplo
+```
+    CriteriaQuery<Pedido> cq = cb.createQuery(Pedido.class);
+    Root<Pedido> pedidoRoot = cq.from(Pedido.class);
+    Join<Pedido, Cliente> clienteJoin = pedidoRoot.join("cliente", JoinType.INNER); // "cliente" es el nombre del atributo de relación en Pedido
+    cq.select(pedidoRoot).where(cb.equal(clienteJoin.get("nombre"), "Juan"));
+    
+    // Fetch Join
+    CriteriaQuery<Pedido> cqFetch = cb.createQuery(Pedido.class);
+    Root<Pedido> pedidoRootFetch = cqFetch.from(Pedido.class);
+    pedidoRootFetch.fetch("cliente", JoinType.LEFT);
+    cqFetch.select(pedidoRootFetch).where(cb.equal(pedidoRootFetch.get("id"), 1L));
+```
 
 <a id="consultas-nativas"></a>
 ### Consultas Nativas (Native Queries)
+En situaciones donde JPQL o la API de Criterios no pueden expresar una consulta específica (por ejemplo, el uso de funciones específicas de la base de datos o consultas muy complejas), JPA permite ejecutar consultas SQL nativas directamente contra la base de datos.
+
+> [!IMPORTANT]
+> Las consultas nativas ofrecen la máxima flexibilidad pero sacrifican la portabilidad entre bases de datos, ya que están ligadas al dialecto SQL específico de la base de datos utilizada.
 
 <a id="sql-directo"></a>
 #### Ejecución de SQL Directo
+Las consultas nativas se crean utilizando el método createNativeQuery() del EntityManager. Este método puede tomar una cadena SQL como argumento y, opcionalmente, la clase de la entidad a la que se mapearán los resultados.
+
+> Ejemplo
+```
+    // Consulta nativa que devuelve entidades Producto
+    Query<Producto> nativeQuery = entityManager.createNativeQuery("SELECT * FROM productos WHERE precio > :precioMinimo", Producto.class);
+    nativeQuery.setParameter("precioMinimo", 100.0);
+    List<Producto> productos = nativeQuery.getResultList();
+    
+    // Consulta nativa que devuelve resultados escalares (no entidades)
+    Query<?> scalarNativeQuery = entityManager.createNativeQuery("SELECT nombre, precio FROM productos WHERE categoria = ?1");
+    scalarNativeQuery.setParameter(1, "Libros");
+    List<?> resultadosEscalares = scalarNativeQuery.getResultList();
+    for (Object[] resultado : (List<Object[]>) resultadosEscalares) {
+        String nombre = (String) resultado[0];
+        BigDecimal precio = (BigDecimal) resultado[1];
+    }
+```
 
 <a id="mapeo-de-resultado-en-consulta-nativa"></a>
 #### Mapeo de resultados a entidades o escalares
 
+- Mapeo a Entidades: Si se proporciona la clase de la entidad al crear la consulta nativa, JPA **intentará mapear las columnas de la tabla resultante a los atributos de la entidad**. Los nombres de las columnas deben coincidir con los nombres de las columnas definidos en el mapeo de la entidad (a través de @Column o por defecto).
+
+- Mapeo a Resultados Escalares: Si no se proporciona una clase de entidad, la consulta nativa **devolverá una lista de arrays de objetos** (List<Object[]>), donde cada array representa una fila y los elementos del array son los valores de las columnas seleccionadas. Se debe de realizar el casting adecuado a los tipos de datos esperados.
+
+- Mapeo de Resultados Complejos: Para mapear consultas nativas a conjuntos de resultados más complejos (por ejemplo, cuando la consulta involucra joins y se quieren devolver objetos que no son entidades), se pueden utilizar result set mappings definidos con la anotación @SqlResultSetMapping.
+
 <a id="transacciones-y-concurrencia"></a>
 ## Transacciones y concurrencia
+La gestión de transacciones y la concurrencia son aspectos cruciales en cualquier sistema de persistencia de datos. JPA proporciona mecanismos para asegurar la atomicidad, consistencia, aislamiento y durabilidad (ACID) de las operaciones, así como estrategias para manejar el acceso simultáneo a los datos por múltiples usuarios o procesos.
 
 <a id="gestion-de-transacciones"></a>
 ### Gestión de transacciones
+Una transacción es una secuencia de operaciones que se tratan como una sola unidad lógica de trabajo. Todas las operaciones dentro de una transacción deben completarse con éxito (commit) para que los cambios se guarden en la base de datos, o todas deben deshacerse (rollback) para mantener la integridad de los datos. 
+
+JPA soporta dos modelos principales de gestión de transacciones: locales (resource-local) y JTA (Java Transaction API).
 
 <a id="transacciones-locales"></a>
 #### Transacciones locales (Resource-Local)
+En las transacciones locales, **la gestión de la transacción está directamente controlada por el proveedor de persistencia** (por ejemplo, Hibernate) y está estrechamente ligada a la conexión de la base de datos
+
+> [!NOTE]
+> Común en aplicaciones Java SE o en entornos donde no se dispone de un administrador de transacciones JTA.
+
+> Ejemplo
+```
+    EntityManagerFactory emf = Persistence.createEntityManagerFactory("miUnidadPersistencia");
+    EntityManager em = emf.createEntityManager();
+    EntityTransaction tx = em.getTransaction();
+    
+    try {
+        tx.begin();
+        // Realizar operaciones de persistencia (persist, merge, remove, etc.)
+        Cliente cliente = em.find(Cliente.class, 1L);
+        cliente.setNombre("Nuevo Nombre");
+        tx.commit();
+    } catch (Exception e) {
+        if (tx != null && tx.isActive()) {
+        tx.rollback();
+    }
+    } finally {
+        em.close();
+        emf.close();
+    }
+```
 
 <a id="transacciones-jta"></a>
 #### Transacciones JTA
+JTA **es una API estándar de Java para la gestión de transacciones distribuidas**. Permite coordinar transacciones que pueden involucrar múltiples recursos (por ejemplo, múltiples bases de datos, colas de mensajes). La gestión de las transacciones JTA **se realiza por un administrador de transacciones externo**.
+
+En un entorno JTA, la delimitación de la transacción a menudo **se realiza de forma declarativa utilizando anotaciones como @Transactional** (de Jakarta EE o Spring)
+
+> Ejemplo
+```
+import jakarta.ejb.Stateless;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.transaction.Transactional;
+
+@Stateless
+public class ServicioCliente {
+
+    @PersistenceContext
+    private EntityManager em;
+
+    @Transactional
+    public void actualizarNombreCliente(Long id, String nuevoNombre) {
+        Cliente cliente = em.find(Cliente.class, id);
+        if (cliente != null) {
+            cliente.setNombre(nuevoNombre);
+        }
+        // Si ocurre una excepción no controlada dentro de este método,
+        // la transacción se marcará para rollback automáticamente.
+    }
+}
+```
 
 <a id="delimitacion-de-transacciones"></a>
 ### Delimitación de transacciones
+La delimitación de transacciones se refiere a definir el inicio y el final de una transacción. Esto puede hacerse de forma programática (manualmente en el código) o de forma declarativa.
 
 <a id="inicio-commit-rollback"></a>
 #### Inicio, commit y rollback
 
+- Inicio (Begin): **Marca el comienzo de una nueva unidad de trabajo**. En transacciones locales, se llama a tx.begin(). En JTA, la transacción puede iniciarse implícitamente al entrar en un método transaccional o explícitamente a través de la API JTA.
+
+- Commit: **Si todas las operaciones dentro de la transacción se completan con éxito, se realiza un commit**. Esto hace que todos los cambios realizados en la base de datos durante la transacción sean permanentes. En transacciones locales, se llama a tx.commit(). En JTA, el commit es gestionado por el administrador de transacciones al finalizar la unidad de trabajo transaccional.
+
+- Rollback: Si ocurre algún error durante la transacción, o si se decide deshacer los cambios, se realiza un rollback. **Esto revierte la base de datos al estado en el que se encontraba antes de que comenzara la transacción**. En transacciones locales, se llama a tx.rollback(). En JTA, el rollback puede ser iniciado por el código o por el administrador de transacciones en caso de una excepción no controlada.
+
 <a id="aislamiento-de-transacciones"></a>
 ### Aislamiento de transacciones
+El aislamiento de transacciones define el grado en que una transacción debe estar aislada de las operaciones realizadas por otras transacciones concurrentes. Un mayor nivel de aislamiento proporciona mayor consistencia pero puede reducir la concurrencia. JPA delega el manejo de los niveles de aislamiento al proveedor de persistencia y a la base de datos subyacente.
+
+> Niveles de Aislamiento Estándar (de menor a mayor aislamiento)
+
+1. Read Uncommitted: Permite lecturas sucias.
+
+2. Read Committed: Asegura que una transacción solo lee datos que han sido confirmados por otras transacciones. Evita las lecturas sucias pero puede permitir lecturas no repetibles y lecturas fantasma.
+
+3. Repeatable Read: Asegura que si una transacción lee una fila varias veces, siempre verá los mismos datos (a menos que la propia transacción los modifique). Evita las lecturas sucias y las lecturas no repetibles, pero puede permitir lecturas fantasma.
+
+4. Serializable: Proporciona el nivel de aislamiento más alto. Garantiza que las transacciones concurrentes se ejecuten de forma que parezca que se ejecutaron secuencialmente. Evita lecturas sucias, lecturas no repetibles y lecturas fantasma.
 
 <a id="lectura-sucia"></a>
 #### Lectura sucia
+Ocurre cuando una transacción lee datos que han sido modificados por otra transacción que aún no ha sido confirmada (commit). Si la segunda transacción realiza un rollback, la primera transacción habrá leído datos que nunca fueron realmente válidos. Este es el nivel de aislamiento más bajo.
 
 <a id="lectura-no-repetible"></a>
 #### Lectura no repetible
+Ocurre cuando una transacción lee la misma fila dos veces durante su ejecución, y los valores son diferentes. Esto se debe a que otra transacción ha modificado esa fila y ha hecho commit entre las dos lecturas de la primera transacción.
 
 <a id="lectura-fantasma"></a>
 #### Lectura fantasma
+Ocurre cuando una transacción ejecuta la misma consulta dos veces y el conjunto de filas devuelto es diferente. Esto se debe a que otra transacción ha insertado o eliminado filas que coinciden con la consulta de la primera transacción y ha hecho commit entre las dos ejecuciones.
 
 <a id="bloqueos"></a>
 ### Bloqueos
+JPA proporciona mecanismos para controlar el acceso concurrente a las entidades y prevenir problemas de integridad de datos. Estos mecanismos se conocen como bloqueos (locking) y pueden ser optimistas o pesimistas.
 
 <a id="optimistic"></a>
 #### Optimistic
+El bloqueo optimista asume que los conflictos entre transacciones concurrentes son raros. En lugar de bloquear explícitamente las filas en la base de datos, **JPA utiliza un campo de versión (anotado con @Version) en la entidad para detectar modificaciones concurrentes**. 
+
+- Funcionamiento: 
+
+1. Cuando una entidad es leída, su valor de versión se almacena.
+2. Antes de que la transacción que modificó la entidad realice el commit, el proveedor de JPA verifica si el valor de la versión en la base de datos coincide con el valor de la versión que se leyó al inicio de la transacción.
+3. Si los valores de versión coinciden, la transacción se confirma y el valor de la versión se incrementa. 
+4. Si los valores de versión no coinciden, significa que otra transacción ha modificado la entidad entre la lectura y la escritura de la transacción actual. En este caso, se lanza una excepción (javax.persistence.OptimisticLockException), y la transacción actual debe realizar un rollback y posiblemente reintentar la operación.
+
+- Ventajas:
+1. Mayor concurrencia ya que no se mantienen bloqueos exclusivos durante largos períodos.
+2. Menor sobrecarga en el sistema si los conflictos son raros.
+
+- Desventajas:
+1. Los conflictos solo se detectan en el momento del commit, lo que puede llevar a la pérdida de trabajo si una transacción larga falla debido a un bloqueo optimista.
+2. Requiere que la aplicación maneje las excepciones de bloqueo optimista y posiblemente reintente las operaciones.
 
 <a id="pessimistic-locking"></a>
 #### Pessimistic Locking
+El bloqueo pesimista asume que los conflictos entre transacciones concurrentes son probables. Por lo tanto, bloquea explícitamente las filas correspondientes a las entidades en la base de datos tan pronto como se acceden dentro de una transacción, impidiendo que otras transacciones las modifiquen hasta que se libere el bloqueo (al hacer commit o rollback).
+
+- Funcionamiento:
+1. Al leer una entidad que se va a modificar, la transacción adquiere un bloqueo en la base de datos para esa fila (o filas relacionadas).
+2. Otras transacciones que intenten acceder a las mismas filas tendrán que esperar hasta que la primera transacción libere el bloqueo
+3. El bloqueo se libera cuando la transacción que lo adquirió realiza un commit o un rollback
+
+- Ventajas:
+
+1. Evita los problemas de concurrencia al impedir que otras transacciones modifiquen los datos que se están utilizando.
+2. La detección de conflictos ocurre inmediatamente al intentar acceder a los datos bloqueados.
+
+- Desventajas:
+1. Reduce la concurrencia ya que las transacciones pueden tener que esperar por los bloqueos.
+2. Puede llevar a problemas de rendimiento y a posibles interbloqueos (deadlocks) si los bloqueos se mantienen durante mucho tiempo o si las transacciones adquieren bloqueos en un orden inconsistente.
+
+
+> Tipos de Bloqueo Pesimista en JPA (a través de LockModeType en los métodos find() o al crear consultas):
+
+1. LockModeType.PESSIMISTIC_READ: Adquiere un bloqueo de lectura compartido. Permite que otras transacciones lean los datos pero no los modifiquen.
+2. LockModeType.PESSIMISTIC_WRITE: Adquiere un bloqueo de escritura exclusivo. Impide que otras transacciones lean o modifiquen los datos.
+3. LockModeType.PESSIMISTIC_FORCE_INCREMENT: Similar a PESSIMISTIC_WRITE pero también fuerza el incremento del campo de versión (si existe) al adquirir el bloqueo.
 
 <a id="contexto-de-persistencia"></a>
 ### Contexto de persistencia
+El contexto de persistencia es un entorno gestionado que **contiene las instancias de las entidades que están siendo gestionadas por un EntityManager**. Actúa como una caché de primer nivel para las entidades.
 
 <a id="cache-de-primer-nivel"></a>
 #### Cache de primer nivel
+La caché de primer nivel es una caché a nivel de EntityManager. Dentro de la misma instancia de EntityManager y durante la misma transacción, **si se solicita la misma entidad varias veces por su clave primaria, se devolverá la misma instancia de objeto de la caché en lugar de acceder a la base de datos nuevamente** (a menos que la caché haya sido invalidada o la entidad haya sido desasociada).
+
+- Características:
+1. La caché es privada para cada instancia de EntityManager y no se comparte entre diferentes EntityManagers, incluso si pertenecen a la misma EntityManagerFactory.
+2. La caché existe mientras el EntityManager esté abierto. **Se destruye cuando se cierra el EntityManager**.
+3. El EntityManager es responsable de sincronizar el estado de las entidades en la caché con la base de datos durante el commit de la transacción o cuando se llama al método flush().
 
 <a id="ciclo-de-vida-de-las-entidadeS"></a>
 #### Ciclo de vida de las entidades
+Una entidad en JPA puede estar en uno de los siguientes estados en relación con el contexto de persistencia:
 
 <a id="el-estado-new"></a>
 ##### El estado New
+Una entidad está en estado New (o Transient) cuando **acaba de ser instanciada y aún no está asociada con ningún contexto de persistencia**. No tiene una representación correspondiente en la base de datos (a menos que ya exista con la misma clave primaria)
+
+- Características:
+1. No está gestionada por el EntityManager.
+2. Las operaciones de persistencia realizadas en esta entidad no se propagan automáticamente a la base de datos.
 
 <a id="el-estado-managed"></a>
 ##### El estado Managed
+Una entidad está en estado Managed cuando **está asociada con un contexto de persistencia y tiene una representación correspondiente en la base de datos**. Esto ocurre después de que una entidad New es persistida (con persist()), o cuando una entidad existente se recupera de la base de datos (con find() o una consulta).
+
+- Características:
+1. Está gestionada por el EntityManager.
+2. Cualquier cambio realizado en los atributos de una entidad Managed dentro de una transacción se detectará automáticamente (dirty checking) y se sincronizará con la base de datos durante el flush() o el commit() de la transacción.
 
 <a id="el-estado-detached"></a>
 ##### El estado Detached
+Una entidad está en estado Detached cuando **previamente estuvo Managed pero ya no está asociada con ningún contexto de persistencia**. Esto puede ocurrir después de que **el EntityManager que la gestionaba se ha cerrado**, o después de que la entidad ha sido explícitamente desasociada (con detach() o clear())
+
+> [!IMPORTANT]
+> Para volver a asociar una entidad Detached con un contexto de persistencia y sincronizar sus cambios, se utiliza el método merge().
 
 <a id="el-estado-removed"></a>
 ##### El estado Removed
 
+Una entidad está en estado Removed cuando **ha sido marcada para su eliminación de la base de datos**. Esto ocurre después de que se llama al método remove() en una entidad Managed. La **eliminación real de la base de datos ocurre durante el flush() o el commit()** de la transacción.
+
+- Características:
+1. Está gestionada por el EntityManager (hasta que se elimina de la base de datos).
+2. Será eliminada de la base de datos al finalizar la transacción.
+3. Una vez en estado Removed, las operaciones posteriores en la entidad pueden tener un comportamiento indefinido.
+
 <a id="operaciones-de-entity-manager"></a>
 ### Operaciones del EntityManager
- 
+El EntityManager proporciona varios métodos para gestionar el ciclo de vida de las entidades y para interactuar con el contexto de persistencia y la base de datos.
+
 <a id="metodos-comunes-del-entity-manager"></a>
 #### Métodos persist(), merge(), remove(), find(), refresh(), detach(), clear() y flush()
+-  persist(entity): Hace que una entidad New se convierta en Managed, lo que significa que se asocia con el contexto de persistencia y se planifica su inserción en la base de datos (la inserción real ocurre durante el flush() o commit()). 
+
+> [!NOTE]
+> Si la clave primaria se genera automáticamente, puede que no esté disponible inmediatamente después de la llamada a persist() hasta que se realice el flush.
+
+- merge(entity): Fusiona el estado de una entidad Detached con el contexto de persistencia. Si una entidad con la misma identidad ya existe en el contexto de persistencia, se actualiza con el estado de la entidad Detached. Si no existe, se crea una nueva instancia Managed y se copia el estado de la entidad Detached. merge() devuelve la instancia Managed resultante (que puede o no ser la misma instancia que se pasó como argumento).
+
+- remove(entity): Marca una entidad Managed para su eliminación de la base de datos. La eliminación real ocurre durante el flush() o commit(). 
+
+> [!NOTE]
+> La entidad debe estar en estado Managed para poder ser removida.
+
+- find(entityClass, primaryKey): Busca una entidad por su clave primaria. Primero busca en la caché de primer nivel. Si no se encuentra, intenta recuperarla de la base de datos y la coloca en el estado Managed. Si no se encuentra en la base de datos, devuelve null.
+
+- refresh(entity): Actualiza el estado de una entidad Managed desde la base de datos, sobrescribiendo cualquier cambio que se haya realizado en la entidad en el contexto de persistencia. Es útil para descartar cambios locales y obtener el estado actual de la base de datos.
+
+- detach(entity): Desasocia una entidad Managed del contexto de persistencia, moviéndola al estado Detached. Los cambios futuros realizados en la entidad detached no serán rastreados ni sincronizados automáticamente con la base de datos. Si se desea volver a gestionar la entidad y sincronizar sus cambios, se debe de utilizar el método merge().
+
+- clear(): Desasocia todas las entidades Managed del contexto de persistencia. Esto significa que la caché de primer nivel se vacía. Las entidades que estaban Managed pasan al estado Detached. 
+
+- flush(): Sincroniza los cambios realizados en el contexto de persistencia con la base de datos. Esto incluye las operaciones de persist(), merge(), remove(), refresh(), detach() y clear().
+
+> [!NOTE]
+>  Llamar a flush() puede ser útil para forzar la escritura de los cambios en la base de datos en un punto específico dentro de una transacción, por ejemplo, para hacer que los cambios sean visibles para otras operaciones dentro de la misma transacción o para verificar si hay errores antes de realizar el commit final.
