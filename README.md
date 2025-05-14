@@ -82,8 +82,38 @@
             - [El estado Removed](#el-estado-removed)
         - [Operaciones del EntityManager](#operaciones-de-entity-manager)
             - [Métodos persist(), merge(), remove(), find(), refresh(), detach(), clear() y flush()](#metodos-comunes-del-entity-manager)
-         
-
+ - [Fundamentos de Spring Data JPA](#fundamentos-de-spring-data-jpa)
+    - [¿Qué es Spring Data JPA](#que-es-spring-data-jpa)
+    - [Configuración de Spring Data JPA](#configuracion-de-spring-data-jpa)
+    - [Repositorios en Spring Data JPA](#repositorios-en-spring-jpa)
+    - [Derivación de consultas](#derivacion-de-consultas)
+        - [Uso de palabras clave](#palabras-clave)
+        - [Ejemplos de derivación de consultas](#ejemplos-de-derivacion-de-consultas)
+    - [La anotación @Query](#la-anotacion-query)
+        - [Consultas JPQL con @Query](#consultas-jpql-con-query)
+        - [Consultas nativas con @Query](#consultas-nativas-con-query)
+    - [Paginación y ordenamiento](#paginacion-y-ordenamiento)
+        - [Ejemplos con la interfaz Pageable](#ejemplos-con-la-interfaz-pageable)
+        - [Ejemplos con la interfaz Sort](#ejemplos-con-la-interfaz-sort)
+        - [Ejemplos con la interfaz PageRequest](#ejemplos-con-la-interfaz-pagerequest)
+    - [Auditoria](#auditoria)
+        - [Uso de la anotación @CreatedDate](#la-anotacion-created-date)
+        - [Uso de la anotación @LastModifiedDate](#la-anotacion-last-modified-date)
+        - [Uso de la anotación @CreatedBy](#la-anotacion-created-by)
+        - [Uso de la anotación @LastModifiedBy ](#la-anotacion-last-modified-by)
+    - [Eventos de Repositorio](#eventos-de-repositorio)
+        - [BeforeSaveEvent](#before-save-event)
+        - [AfterSaveEvent](#after-save-event)
+        - [Otro tipo de eventos](#otro-tipo-de-eventos)
+    - [Proyecciones](#proyeccioones-en-jpa)
+    - [Consultas asincronas](#consultas-asincronas)
+        - [La clase Future](#la-clase-future)
+        - [La clase ListenableFuture](#la-clase-listeneable-future)
+        - [La clase CompletableFuture](#la-clase-completable-future)
+    - [Transacciones en Spring Data JPA](#transacciones-en-spring-data-jpa)
+        - [La anotación @Transactional](#la-anotacion-transactional)
+    - [Manejo de excepciones de Spring Data JPA](#manejo-de-excepciones)
+   
 <a id="fundamentos-jpa"></a>
 # Fundamentos de JPA
 
@@ -1351,3 +1381,574 @@ El EntityManager proporciona varios métodos para gestionar el ciclo de vida de 
 
 > [!NOTE]
 >  Llamar a flush() puede ser útil para forzar la escritura de los cambios en la base de datos en un punto específico dentro de una transacción, por ejemplo, para hacer que los cambios sean visibles para otras operaciones dentro de la misma transacción o para verificar si hay errores antes de realizar el commit final.
+
+<a id="fundamentos-de-spring-data-jpa"></a>
+## Fundamentos de Spring Data JPA
+Spring Data JPA **es un submódulo del proyecto Spring Data** que tiene como objetivo simplificar la capa de acceso a datos en aplicaciones que utilizan Java Persistence API (JPA) para la persistencia en bases de datos relacionales. Se basa en los conceptos de los repositorios y elimina gran parte del código boilerplate que normalmente se escribe para interactuar con JPA.
+
+<a id="que-es-spring-data-jpa"><a/>
+### ¿Qué es Spring Data JPA?
+Spring Data JPA **se sitúa como una capa de abstracción sobre los proveedores de JPA** (como Hibernate, EclipseLink, etc.). Su principal objetivo es reducir significativamente la cantidad de código necesario para implementar la capa de acceso a datos (el Data Access Object o DAO).
+
+> Puntos clave de Spring Data JPA
+
+1. El concepto central de Spring Data JPA son los repositorios. En lugar de implementar clases DAO manualmente, se definen interfaces que extienden interfaces específicas proporcionadas por Spring Data JPA (como CrudRepository o JpaRepository). **Spring Data JPA se encarga de generar automáticamente la implementación de estas interfaces en tiempo de ejecución**.
+
+2.  Una de las características más potentes es la capacidad de derivar consultas automáticamente a partir de los nombres de los métodos definidos en las interfaces de repositorio. Siguiendo ciertas convenciones de nomenclatura.
+
+3. Para consultas más complejas que no se pueden derivar fácilmente, Spring Data JPA permite definir consultas JPQL o SQL nativas directamente en los métodos de repositorio utilizando la anotación @Query
+
+<a id="configuracion-de-spring-data-jpa"><a/>
+### Configuración de Spring Data JPA
+Para utilizar Spring Data JPA dentro de un proyecto Spring, es necesario realizar algunos pasos de configuración:
+
+1. Añadir las Dependencias: Se deben de incluir la dependencia de Spring Data JPA. También son necesarias la dependencia de un proveedor de JPA (como Hibernate) y el driver JDBC para la base de datos.
+
+- Maven (pom.xml):
+```
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.hibernate.orm</groupId>
+    <artifactId>hibernate-core</artifactId>
+</dependency>
+<dependency>
+    <groupId>com.h2database</groupId>
+    <artifactId>h2</artifactId>
+    <scope>runtime</scope>
+</dependency>
+```
+
+- Gradle (build.gradle):
+```
+  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+  implementation 'org.hibernate.orm:hibernate-core'
+  runtimeOnly 'com.h2database:h2'
+```
+
+2. Se debe configurar cómo la aplicación se conecta a la base de datos. Esto generalmente se hace en el archivo de propiedades de Spring (application.properties o application.yml).
+
+- application.properties:
+```
+  spring.datasource.url=jdbc:h2:mem:testdb
+  spring.datasource.driver-class-name=org.h2.Driver
+  spring.datasource.username=sa
+  spring.datasource.password=
+  spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+  spring.jpa.hibernate.ddl-auto=create-drop
+```
+
+
+<a id="repositorios-en-spring-jpa"><a/>
+### Repositorios en Spring Data JPA
+Los repositorios son interfaces que extienden interfaces base proporcionadas por Spring Data JPA. Estas interfaces base ya definen métodos para las operaciones CRUD y otras funcionalidades comunes. Spring Data JPA proporciona dos interfaces principales como punto de partida:
+
+1. CrudRepository<T, ID> : Proporciona métodos básicos para realizar operaciones CRUD en una entidad de tipo T con un tipo de ID. Los métodos incluyen save(), findById(), existsById(), findAll(), deleteById(), delete(), deleteAll(), count().
+
+2. JpaRepository<T, ID>: Extiende CrudRepository y añade métodos específicos de JPA, como soporte para flushing (flush(), saveAndFlush()), operaciones por lotes y la capacidad de realizar paginación y ordenamiento a través de los métodos findAll(Pageable pageable) y findAll(Sort sort).
+
+Para crear un repositorio personalizado, simplemente se define una interfaz que **extiende una de estas interfaces base**, especificando el tipo de la entidad que gestiona y el tipo de su ID
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import com.example.entity.Usuario;
+
+public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+    // Aquí se pueden añadir métodos de consulta personalizados
+}
+```
+Spring Data JPA analizará esta interfaz y generará automáticamente una implementación que proporciona los métodos definidos en JpaRepository (y por lo tanto, en CrudRepository).
+
+Se puede inyectar una instancia de UsuarioRepository dentro de servicios o controladores y utilizar sus métodos para **interactuar con la base de datos sin escribir ninguna implementación de DAO explícita**.
+
+
+<a id="derivacion-de-consultas"><a/>
+### Derivación de consultas
+La derivación de consultas es una de las características más convenientes de Spring Data JPA. Permite definir métodos de consulta simplemente siguiendo ciertas convenciones de nomenclatura en las interfaces de tus repositorios. Spring Data JPA analiza el nombre del método y genera automáticamente la consulta JPA subyacente.
+
+<a id="palabras-clave"><a/>
+#### Uso de palabras clave
+Spring Data JPA soporta una amplia gama de palabras clave que se pueden utilizar en los nombres de tus métodos de repositorio para definir las condiciones de las consultas. Algunas de las palabras clave más comunes incluyen:
+
+- findBy...: Busca entidades que coinciden con las condiciones especificadas después de By.
+- countBy...: Devuelve el número de entidades que coinciden con las condiciones.
+- existsBy...: Devuelve true si existen entidades que coinciden con las condiciones, false en caso contrario.
+- deleteBy...: Elimina las entidades que coinciden con las condiciones.
+- Operadores lógicos: And, Or.
+- Operadores de comparación: Between, LessThan, GreaterThan, LessThanEqual, GreaterThanEqual, After, Before.
+- Operadores de cadena: Like, StartingWith, EndingWith, Containing.
+- Operadores booleanos: True, False.
+- Operadores de nulidad: IsNull, IsNotNull.
+- Operadores de colección: In, NotIn, IsEmpty, IsNotEmpty, Contains, DoesNotContain.
+- Ordenamiento: OrderBy.
+
+> [!NOTE]
+> Después de la palabra clave By, se especifican los atributos de la entidad sobre los que se quiere realizar la consulta, utilizando los nombres de los atributos de la clase de la entidad. Si se necesita combinar múltiples condiciones, se utilizan las palabras And u Or.
+
+<a id="ejemplos-de-derivacion-de-consultas"><a/>
+#### Ejemplos de derivación de consultas
+Consideremos una entidad Usuario con los atributos id (Long), nombre (String), email (String) y activo (boolean):
+
+- findByNombre(String nombre): Genera una consulta que busca usuarios por su nombre. (WHERE nombre = ?1)
+
+- findByEmailAndActivo(String email, boolean activo): Busca usuarios por su email y si están activos. (WHERE email = ?1 AND activo = ?2)
+
+- findByNombreLike(String patron): Busca usuarios cuyo nombre coincide con el patrón LIKE. (WHERE nombre LIKE ?1)
+
+- findByEdadBetween(int minEdad, int maxEdad): Busca usuarios cuya edad está entre un rango. (WHERE edad BETWEEN ?1 AND ?2)
+
+- findByFechaCreacionAfter(Date fecha): Busca usuarios creados después de una fecha específica. (WHERE fechaCreacion > ?1)
+
+- countByActivo(boolean activo): Cuenta el número de usuarios activos o inactivos. (SELECT COUNT(*) FROM Usuario WHERE activo = ?1)
+
+- deleteByEmail(String email): Elimina los usuarios con un email específico. (DELETE FROM Usuario WHERE email = ?1)
+
+- findByDireccionCodigoPostalIn(List<String> codigos): Busca usuarios cuya dirección tiene un código postal en la lista proporcionada. (WHERE direccion.codigoPostal IN (?1))
+
+- findByNombreOrderByFechaCreacionDesc(String nombre): Busca usuarios por nombre y los ordena por fecha de creación descendente. (WHERE nombre = ?1 ORDER BY fechaCreacion DESC)
+
+<a id="la-anotacion-query"><a/>
+### La anotación @Query
+Para consultas más complejas o cuando se necesite un control total sobre la consulta JPA que se ejecuta, se puede utilizar la anotación @Query directamente en los métodos del repositorio. Esta anotación te permite escribir consultas JPQL o SQL nativas.
+
+<a id="consultas-jpql-con-query"><a/>
+#### Consultas JPQL con @Query
+Dentro de la anotación @Query, puedes especificar una cadena JPQL que se ejecutará cuando se llame al método del repositorio. Puedes utilizar parámetros en tu consulta JPQL y enlazarlos a los argumentos del método utilizando la notación :nombreParametro o ?indiceParametro
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import com.example.entity.Producto;
+import java.util.List;
+
+public interface ProductoRepository extends JpaRepository<Producto, Long> {
+
+    @Query("SELECT p FROM Producto p WHERE p.nombre LIKE %:patron%")
+    List<Producto> buscarPorNombreConteniendo(@Param("patron") String patron);
+
+    @Query("SELECT p FROM Producto p WHERE p.precio BETWEEN :minPrecio AND :maxPrecio ORDER BY p.nombre ASC")
+    List<Producto> buscarPorRangoDePrecioOrdenado(@Param("minPrecio") double minPrecio, @Param("maxPrecio") double maxPrecio);
+
+    @Query("SELECT COUNT(p) FROM Producto p WHERE p.categoria = :categoria")
+    int contarProductosPorCategoria(@Param("categoria") String categoria);
+}
+```
+
+<a id="consultas-nativas-con-query"><a/>
+#### Consultas nativas con @Query
+Si se necesita ejecutar una consulta SQL directamente (por ejemplo, para utilizar funciones específicas de la base de datos), se puede establecer el atributo nativeQuery de la anotación @Query en true. En este caso, la cadena dentro de @Query se interpretará como SQL nativo.
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import com.example.entity.Usuario;
+import java.util.List;
+
+public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+
+    @Query(value = "SELECT u.id, u.nombre, u.email FROM usuarios u WHERE u.nombre LIKE %?1%", nativeQuery = true)
+    List<Object[]> buscarUsuariosPorNombreNativo(String patron);
+
+    @Query(value = "SELECT * FROM usuarios WHERE email = :email", nativeQuery = true)
+    Usuario buscarPorEmailNativo(@Param("email") String email);
+}
+```
+
+<a id="paginacion-y-ordenamiento"><a/>
+### Paginación y ordenamiento
+Spring Data JPA simplifica enormemente la implementación de la paginación y el ordenamiento en tus consultas a través de las interfaces Pageable y Sort.
+
+<a id="ejemplos-con-la-interfaz-pageable"><a/>
+#### Ejemplos con la interfaz Pageable
+La interfaz Pageable representa una solicitud de paginación. **Contiene información sobre el número de página que se solicita, el tamaño de la página y los criterios de ordenamiento**. Se puede pasar una instancia de Pageable como argumento a los métodos de los repositorios para obtener resultados paginados.
+
+Spring Data JPA proporciona el tipo concreto **PageRequest como una implementación de Pageable**. Se pueden crear instancias de PageRequest especificando el número de página (la primera página es 0), el tamaño de la página y opcionalmente un objeto Sort.
+
+> Ejemplo
+```
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.repository.JpaRepository;
+import com.example.entity.Producto;
+
+public interface ProductoRepository extends JpaRepository<Producto, Long> {
+
+    Page<Producto> findAll(Pageable pageable);
+
+    @Query("SELECT p FROM Producto p WHERE p.categoria = :categoria")
+    Page<Producto> buscarPorCategoria(@Param("categoria") String categoria, Pageable pageable);
+}
+```
+Spring Data JPA ejecutará una consulta que recupera solo la página de resultados solicitada y también ejecutará una consulta de conteo para determinar el número total de elementos. El tipo de retorno Page<Producto> contiene la lista de productos para la página actual, así como información sobre la paginación (número total de páginas, número total de elementos, etc.)
+
+Para el uso de estos métodos en los servicios o controladores se necesita de:
+```
+    int numeroDePagina = 0;
+    int tamanoDePagina = 10;
+    Pageable primeraPaginaCon10Productos = PageRequest.of(numeroDePagina, tamanoDePagina);
+    Page<Producto> productosPagina1 = productoRepository.findAll(primeraPaginaCon10Productos);
+    
+    Pageable segundaPaginaCon5ProductosOrdenadosPorPrecio = PageRequest.of(1, 5, Sort.by("precio").descending());
+    Page<Producto> productosPagina2Ordenados = productoRepository.findAll(segundaPaginaCon5ProductosOrdenadosPorPrecio);
+    
+    Page<Producto> productosElectronicosPagina1 = productoRepository.buscarPorCategoria("Electrónicos", primeraPaginaCon10Productos);
+```
+
+<a id="ejemplos-con-la-interfaz-sort"><a/>
+#### Ejemplos con la interfaz Sort
+La interfaz Sort representa las opciones de ordenamiento. Se puede especificar por qué atributos ordenar y en qué dirección (ascendente o descendente). Es necesario crear instancias de Sort utilizando los métodos estáticos proporcionados por la clase Sort.
+
+> Ejemplo
+```
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.repository.JpaRepository;
+import com.example.entity.Producto;
+import java.util.List;
+
+public interface ProductoRepository extends JpaRepository<Producto, Long> {
+
+    List<Producto> findAll(Sort sort);
+
+    List<Producto> findByNombreLike(String patron, Sort sort);
+}
+```
+Para utilizar el ordenamiento se necesita de:
+```
+    Sort ordenarPorNombreAscendente = Sort.by("nombre").ascending();
+    List<Producto> productosOrdenadosPorNombre = productoRepository.findAll(ordenarPorNombreAscendente
+```
+
+<a id="ejemplos-con-la-interfaz-pagerequest"><a/>
+#### Ejemplos con la interfaz PageRequest
+PageRequest es una implementación concreta de la interfaz Pageable. Se utiliza para construir objetos Pageable que se pasan a los métodos de los repositorios para habilitar la paginación.
+
+El método estático of() de la clase PageRequest es la forma principal de crear instancias. Tiene las siguientes sobrecargas:
+
+1. PageRequest.of(int page, int size): Crea un PageRequest para la página especificada (page, comenzando desde 0) con el tamaño de página dado (size). El ordenamiento no se especifica en esta sobrecarga.
+
+> Ejemplos
+```
+// Solicitar la primera página con 10 elementos
+Pageable primeraPagina = PageRequest.of(0, 10);
+
+// Solicitar la tercera página con 5 elementos
+Pageable terceraPagina = PageRequest.of(2, 5);
+```
+
+2. PageRequest.of(int page, int size, Sort sort): Crea un PageRequest para la página y tamaño especificados, y también incluye la información de ordenamiento (Sort).
+
+> Ejemplos
+```
+// Solicitar la primera página con 10 elementos, ordenados por nombre ascendente
+Pageable primeraPaginaOrdenadaPorNombreAsc = PageRequest.of(0, 10, Sort.by("nombre").ascending());
+
+// Solicitar la segunda página con 5 elementos, ordenados por precio descendente y luego por nombre ascendente
+Pageable segundaPaginaOrdenadaPorPrecioDescNombreAsc = PageRequest.of(1, 5, Sort.by("precio").descending().and(Sort.by("nombre").ascending()));
+```
+
+> Uso con los métodos del repositorio
+```
+@Service
+public class ProductoService {
+
+    @Autowired
+    private ProductoRepository productoRepository;
+
+    public Page<Producto> obtenerProductosPaginados(int numeroPagina, int tamanoPagina) {
+        Pageable pageable = PageRequest.of(numeroPagina, tamanoPagina);
+        return productoRepository.findAll(pageable);
+    }
+
+    public Page<Producto> obtenerProductosPorCategoriaPaginadosOrdenados(String categoria, int numeroPagina, int tamanoPagina, String sortBy, String sortDirection) {
+        Sort sort = Sort.by(sortBy);
+        if (sortDirection.equalsIgnoreCase("desc")) {
+            sort = sort.descending();
+        }
+        Pageable pageable = PageRequest.of(numeroPagina, tamanoPagina, sort);
+        return productoRepository.buscarPorCategoria(categoria, pageable);
+    }
+}
+```
+
+<a id="auditoria"><a/>
+### Auditoria
+La auditoría en Spring Data JPA permite rastrear automáticamente quién creó o modificó una entidad y cuándo lo hizo. 
+
+> Configuración de la Auditoría
+
+1.  Habilitar la funcionalidad de auditoría en tu configuración de Spring (a menudo en la clase principal o en una clase de configuración específica) utilizando la anotación @EnableJpaAuditing
+```
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.boot.SpringApplication;
+
+@SpringBootApplication
+@EnableJpaAuditing
+public class MiAplicacion {
+
+    public static void main(String[] args) {
+        SpringApplication.run(MiAplicacion.class, args);
+    }
+}
+```
+2. Configurar el AuditorAware (opcional): Para rastrear quién realizó la creación o modificación 
+```
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import java.util.Optional;
+
+@Component
+public class AuditorAwareImpl implements AuditorAware<String> {
+
+    @Override
+    public Optional<String> getCurrentAuditor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(authentication.getName());
+    }
+}
+```
+> [!IMPORTANT]
+> Si no proporcionas un AuditorAware, los campos @CreatedBy y @LastModifiedBy no se poblarán.
+
+
+<a id="la-anotacion-created-date"><a/>
+#### Uso de la anotación @CreatedDate
+La anotación @CreatedDate se aplica a un campo de tipo fecha (como java.util.Date, java.time.LocalDateTime, etc.). Spring Data JPA poblará automáticamente este campo con la fecha y hora de creación de la entidad cuando se persiste por primera vez
+
+> Ejemplo
+```
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import org.springframework.data.annotation.CreatedDate;
+import java.time.LocalDateTime;
+
+@Entity
+public class ProductoAuditado { 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String nombre;
+    private double precio;
+    
+    @CreatedDate
+    private LocalDateTime fechaCreacion;
+    
+    // ... 
+}
+```
+
+<a id="la-anotacion-last-modified-date"><a/>
+#### Uso de la anotación @LastModifiedDate
+La anotación `@LastModifiedDate` se aplica a un campo de tipo fecha. Spring Data JPA actualizará automáticamente este campo con la fecha y hora de la última modificación de la entidad cada vez que se guarda.
+
+> Ejemplo
+```
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import java.time.LocalDateTime;
+
+@Entity
+public class ProductoAuditado {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nombre;
+    private double precio;
+
+    @CreatedDate
+    private LocalDateTime fechaCreacion;
+
+    @LastModifiedDate
+    private LocalDateTime fechaModificacion;
+
+    // ...
+}
+```
+
+<a id="la-anotacion-created-by"><a/>
+#### Uso de la anotación @CreatedBy
+La anotación @CreatedBy se aplica a un campo del tipo devuelto por tu AuditorAware (en nuestro ejemplo, String). Spring Data JPA poblará automáticamente este campo con el "principal" que creó la entidad cuando se persiste por primera vez. Para que esto funcione, se debe de tener configurado un AuditorAware bean.
+
+> Ejemplo
+```
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import java.time.LocalDateTime; 
+
+@Entity
+public class ProductoAuditado {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String nombre;
+    private double precio;
+    
+    @CreatedDate
+    private LocalDateTime fechaCreacion;
+    
+    @CreatedBy
+    private String creadoPor;
+    
+    // ...
+}
+```
+
+
+<a id="la-anotacion-last-modified-by"><a/>
+#### Uso de la anotación @LastModifiedBy
+La anotación `@LastModifiedBy` se aplica a un campo del tipo devuelto por tu `AuditorAware`. Spring Data JPA actualizará automáticamente este campo con el "principal" que modificó la entidad por última vez cada vez que se guarda. También requiere la configuración de un `AuditorAware` bean.
+
+> Ejemplo
+
+```
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
+import java.time.LocalDateTime;
+
+@Entity
+public class ProductoAuditado {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nombre;
+    private double precio;
+
+    @CreatedDate
+    private LocalDateTime fechaCreacion;
+
+    @CreatedBy
+    private String creadoPor;
+
+    @LastModifiedDate
+    private LocalDateTime fechaModificacion;
+
+    @LastModifiedBy
+    private String modificadoPor;
+
+    // ...
+}
+```
+
+<a id="eventos-de-repositorio"><a/>
+### Eventos de Repositorio
+Spring Data JPA permite interceptar ciertos eventos que ocurren durante el ciclo de vida de las operaciones del repositorio. Es posible definir listeners para estos eventos para realizar acciones personalizadas antes o después de que se ejecuten las operaciones del repositorio (como guardar, eliminar, etc.)
+
+Spring Data JPA publica varios eventos, tanto antes como después de las operaciones del repositorio. Algunos de los eventos más comunes son:
+
+<a id="before-save-event"><a/>
+#### BeforeSaveEvent
+Este evento se publica justo antes de que una entidad sea guardada (ya sea una nueva persistencia o una actualización). El listener para este evento recibirá una instancia de BeforeSaveEvent que contiene la entidad que se va a guardar. **Se puede modificar la entidad dentro de este listener**.
+
+> Ejemplo
+```
+import org.springframework.context.ApplicationListener;
+import org.springframework.data.domain.BeforeSaveEvent;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ProductoBeforeSaveListener implements ApplicationListener<BeforeSaveEvent<ProductoAuditado>> {
+
+    @Override
+    public void onApplicationEvent(BeforeSaveEvent<ProductoAuditado> event) {
+        ProductoAuditado producto = event.getEntity();
+        System.out.println("Antes de guardar el producto: " + producto.getNombre());
+        // Aquí puedes realizar validaciones, modificaciones, etc.
+        if (producto.getNombre() != null) {
+            producto.setNombre(producto.getNombre().trim());
+        }
+    }
+}
+```
+
+<a id="after-save-event"><a/>
+#### AfterSaveEvent
+Este evento se publica justo después de que una entidad ha sido guardada (persistida o actualizada). El listener para este evento recibirá una instancia de AfterSaveEvent que contiene la entidad guardada.
+
+> Ejemplo
+```
+import org.springframework.context.ApplicationListener;
+import org.springframework.data.domain.AfterSaveEvent;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ProductoAfterSaveListener implements ApplicationListener<AfterSaveEvent<ProductoAuditado>> {
+
+    @Override
+    public void onApplicationEvent(AfterSaveEvent<ProductoAuditado> event) {
+        ProductoAuditado producto = event.getEntity();
+        System.out.println("Después de guardar el producto con ID: " + producto.getId());
+        // Aquí puedes realizar tareas de notificación, logging, etc.
+    }
+}
+```
+
+<a id="otro-tipo-de-eventos"><a/>
+#### Otro tipo de eventos
+Además de los eventos de guardado, Spring Data JPA también publica eventos para otras operaciones del repositorio, como:
+
+- BeforeDeleteEvent y AfterDeleteEvent: Publicados antes y después de eliminar una entidad.
+- BeforeDeleteAllEvent y AfterDeleteAllEvent: Publicados antes y después de eliminar todas las entidades.
+- BeforeConvertEvent: Publicado antes de que una entidad sea convertida para ser escrita en la base de datos.
+- Eventos específicos de cada operación del repositorio (por ejemplo, eventos antes y después de una consulta personalizada)
+
+Para escuchar estos eventos, simplemente se debe de implementar la interfaz ApplicationListener para el tipo de evento que es de interés y además tiene que ser registrado como un bean de Spring (usando @Component, @Service, etc.). El tipo genérico de ApplicationListener debe ser el tipo específico del evento que se quiera escuchar (por ejemplo, BeforeSaveEvent<NombreDeLaEntidad>).
+
+<a id="proyecciones-en-jpa"><a/>
+### Proyecciones
+
+<a id="consultas-asincronas"><a/>
+### Consultas asíncronas
+
+<a id="la-clase-future"><a/>
+#### La clase Future
+
+<a id="la-clase-listeneable-future"><a/>
+#### La clase ListenableFuture
+
+<a id="la-clase-completable-future"><a/>
+#### La clase CompletableFuture
+
+<a id="transacciones-en-spring-data-jpa"><a/>   
+### Transacciones en Spring Data JPA
+
+<a id="la-anotacion-transactional"><a/>
+#### La anotación @Transactional
+
+<a id="manejo-de-excepciones"><a/>
+### Manejo de excepciones de Spring Data JPA
