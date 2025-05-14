@@ -1931,24 +1931,346 @@ Para escuchar estos eventos, simplemente se debe de implementar la interfaz Appl
 
 <a id="proyecciones-en-jpa"><a/>
 ### Proyecciones
+Las proyecciones son una forma de **limitar los atributos que se recuperan de la base de datos** cuando se ejecutan consultas. En lugar de cargar entidades completas, que pueden contener muchos campos, las proyecciones te permiten definir una vista más específica de los datos que necesitas. 
+
+Esto puede resultar en consultas más eficientes y un menor consumo de memoria, especialmente cuando se trabaja con entidades grandes o en escenarios donde solo necesitas un subconjunto de los atributos.
+
+Spring Data JPA ofrece varios enfoques para definir proyecciones:
+
+1. Proyecciones Basadas en Interfaces (Interfaces de Proyección)
+
+Se define una interfaz cuyos métodos getter corresponden a los atributos que se desean recuperar de la entidad. Spring Data JPA se encarga de crear dinámicamente una implementación de esta interfaz en tiempo de ejecución, basada en los resultados de la consulta.
+
+> [!IMPORTANT]
+>  Solo los atributos con métodos getter correspondientes en la interfaz se recuperan de la base de datos
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import java.util.List;
+
+public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+
+    // Interfaz de proyección para solo el nombre y el email
+    interface VistaUsuarioNombreEmail {
+        String getNombre();
+        String getEmail();
+    }
+
+    // Método de repositorio que devuelve la proyección
+    List<VistaUsuarioNombreEmail> findByActivoTrue();
+
+    // También se puede usar con @Query
+    @Query("SELECT u.nombre AS nombre, u.email AS email FROM Usuario u WHERE u.edad > :edadMinima")
+    List<VistaUsuarioNombreEmail> obtenerNombreEmailMayoresDe(@Param("edadMinima") int edadMinima);
+}
+```
+En este ejemplo, VistaUsuarioNombreEmail es la interfaz de proyección. El método findByActivoTrue() del UsuarioRepository devolverá una lista de objetos que implementan esta interfaz, **conteniendo solo el nombre y el email de los usuarios** activos.
+
+
+2. Proyecciones Basadas en Clases (DTOs - Data Transfer Objects)
+
+Se define una clase Java (un DTO) con un constructor que coincide con los atributos que se desean recuperar. Spring Data JPA puede instanciar estos DTOs directamente a partir de los resultados de la consulta.
+
+> [!IMPORTANT]
+> Es crucial que el DTO tenga un constructor cuyos parámetros coincidan en tipo y orden con los atributos seleccionados en la consulta.
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import java.util.List;
+
+public class UsuarioNombreEdadDTO {
+    private String nombre;
+    private int edad;
+
+    public UsuarioNombreEdadDTO(String nombre, int edad) {
+        this.nombre = nombre;
+        this.edad = edad;
+    }
+
+    public String getNombre() {
+        return nombre;
+    }
+
+    public int getEdad() {
+        return edad;
+    }
+}
+
+public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+
+    @Query("SELECT new com.example.dto.UsuarioNombreEdadDTO(u.nombre, u.edad) FROM Usuario u WHERE u.ciudad = :ciudad")
+    List<UsuarioNombreEdadDTO> obtenerNombreEdadPorCiudad(@Param("ciudad") String ciudad);
+}
+```
+Aquí, UsuarioNombreEdadDTO es la clase de proyección. La consulta JPQL utiliza la sintaxis new com.example.dto.UsuarioNombreEdadDTO(...) para indicar a JPA que cree instancias de este DTO con los resultados de la consulta
+
+> [!NOTE]
+> Algunas funcionalidades de JPA, como el lazy loading de relaciones, pueden no funcionar de la misma manera con las proyecciones basadas en interfaces o DTOs, ya que estos no son entidades gestionadas por el contexto de persistencia. 
 
 <a id="consultas-asincronas"><a/>
 ### Consultas asíncronas
+Las consultas asíncronas permiten ejecutar operaciones de acceso a datos sin bloquear el hilo actual. Esto es especialmente útil en aplicaciones con alta concurrencia donde no se quiere que los hilos de procesamiento se queden esperando la finalización de las consultas a la base de datos
+
+Spring Data JPA proporciona soporte para consultas asíncronas a través de varios tipos de retorno: Future, ListenableFuture y CompletableFuture.
 
 <a id="la-clase-future"><a/>
 #### La clase Future
+Future representa el resultado de una operación asíncrona. Permite verificar si la operación ha completado, esperar a su finalización y obtener el resultado (que puede bloquear el hilo si la operación aún no ha terminado)
+
+Se permite declarar métodos en los repositorios que devuelvan un Future del tipo de la entidad o del resultado de la consulta.
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.scheduling.annotation.Async;
+import java.util.concurrent.Future;
+
+public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+
+    @Async
+    Future<Usuario> findByEmail(String email);
+}
+```
+
+Para que esto funcione, se debe de habilitar el soporte para la ejecución asíncrona en la configuración de Spring utilizando la anotación @EnableAsync. El método del repositorio debe estar anotado con @Async, lo que indica que su ejecución se realizará en un hilo diferente gestionado por un TaskExecutor de Spring.
+
+- Uso en el Servicio:
+```
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+@Service
+public class UsuarioService {
+
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+
+    public Usuario obtenerUsuarioPorEmailAsincrono(String email) throws ExecutionException, InterruptedException {
+        Future<Usuario> futureUsuario = usuarioRepository.findByEmail(email);
+        // Realizar otras tareas mientras la consulta se ejecuta
+        System.out.println("Consultando usuario...");
+        return futureUsuario.get(); // Bloquea hasta que el resultado esté disponible
+    }
+}
+```
+
+- Limitaciones de Future:
+1. No proporciona una forma sencilla de encadenar operaciones asíncronas o manejar errores.
+2. Obtener el resultado (future.get()) es una operación bloqueante
 
 <a id="la-clase-listeneable-future"><a/>
 #### La clase ListenableFuture
+ListenableFuture es una extensión de Future proporcionada por Spring que permite registrar callbacks que **se ejecutarán cuando la operación asíncrona se complete (ya sea con éxito o con una excepción)**. Esto facilita la notificación y el manejo asíncrono de los resultados.
+
+Similar a Future, se pueden declarar métodos de repositorio que devuelvan ListenableFuture. Es **necesario habilitar la ejecución asíncrona** (@EnableAsync) y **anotar el método del repositorio** con @Async.
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.util.concurrent.ListenableFuture;
+
+public interface ProductoRepository extends JpaRepository<Producto, Long> {
+
+    @Async
+    ListenableFuture<List<Producto>> findByPrecioGreaterThan(double precioMinimo);
+}
+```
+
+- Uso en el servicio:
+```
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.util.concurrent.ListenableFuture; 
+
+@Service
+public class ProductoService {
+
+    @Autowired
+    private ProductoRepository productoRepository;
+
+    public void obtenerProductosPorPrecioAsincrono(double precioMinimo) {
+        ListenableFuture<List<Producto>> futureProductos = productoRepository.findByPrecioGreaterThan(precioMinimo);
+        futureProductos.addCallback(
+            result -> {
+                System.out.println("Productos encontrados: " + result);
+                // Procesar los resultados
+            },
+            ex -> {
+                System.err.println("Error al consultar productos: " + ex.getMessage());
+                // Manejar la excepción
+            }
+        );
+        System.out.println("Consulta de productos iniciada asíncronamente...");
+        // El hilo principal puede continuar con otras tareas
+    }
+}
+```
+`ListenableFuture` mejora el manejo asíncrono al permitir la ejecución de código cuando el resultado está disponible o cuando ocurre un error, sin necesidad de bloquear el hilo principal.
 
 <a id="la-clase-completable-future"><a/>
 #### La clase CompletableFuture
+CompletableFuture es una extensión más potente de Future introducida en Java 8. Proporciona una API rica para componer, combinar y manejar errores en operaciones asíncronas de manera declarativa. Soporta tanto el consumo del resultado como la producción del mismo de forma asíncrona.
+
+Se pueden declarar métodos de repositorio que devuelvan CompletableFuture. Requiere la habilitación de la ejecución asíncrona (@EnableAsync) y la anotación @Async en el método del repositorio.
+
+> Ejemplo
+```
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.scheduling.annotation.Async;
+import java.util.concurrent.CompletableFuture;
+
+public interface PedidoRepository extends JpaRepository<Pedido, Long> {
+
+    @Async
+    CompletableFuture<Pedido> findById(Long id);
+}
+```
+
+- Uso en el servicio:
+```
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import java.util.concurrent.CompletableFuture;
+
+@Service
+public class PedidoService {
+
+    @Autowired
+    private PedidoRepository pedidoRepository;
+
+    public CompletableFuture<String> obtenerEstadoPedidoAsincrono(Long pedidoId) {
+        CompletableFuture<Pedido> futurePedido = pedidoRepository.findById(pedidoId);
+        return futurePedido.thenApply(pedido -> {
+            if (pedido != null) {
+                return "Estado del pedido " + pedidoId + ": " + pedido.getEstado();
+            } else {
+                return "Pedido no encontrado con ID: " + pedidoId;
+            }
+        });
+    }
+}
+```
+> [!NOTE]
+> 
+> CompletableFuture ofrece la mayor flexibilidad para trabajar con resultados asíncronos, permitiendo encadenar operaciones (thenApply, thenCompose), manejar errores (exceptionally, handle), y combinar múltiples futuros (thenCombine, allOf)
+
+- Consideraciones sobre las consultas asíncronas
+
+1.  Hay que tener en cuenta que el contexto de persistencia (EntityManager) generalmente está ligado al hilo que lo creó. Al trabajar con tareas asíncronas, es posible que se necesite gestionar el ciclo de vida del EntityManager con cuidado, especialmente si la tarea asíncrona se ejecuta fuera del hilo de la transacción original.
+2. Spring utiliza un TaskExecutor para gestionar los hilos en los que se ejecutan las tareas asíncronas. Se puede configurar un TaskExecutor personalizado si se necesita un comportamiento específico (por ejemplo, un pool de hilos de tamaño fijo).
+3. Las operaciones asíncronas deben ser declaradas con la anotación @Async en el repositorio o servicio.
+4. Si se utiliza un TaskExecutor personalizado, se debe asegurar que se liberen los recursos utilizados por el TaskExecutor cuando se complete la tarea asíncrona.
 
 <a id="transacciones-en-spring-data-jpa"><a/>   
 ### Transacciones en Spring Data JPA
+Spring Data JPA simplifica la gestión de transacciones a través de la abstracción que proporciona Spring Framework. La piedra angular de esta gestión declarativa es la anotación @Transactional
 
 <a id="la-anotacion-transactional"><a/>
 #### La anotación @Transactional
+La anotación @Transactional sirve para declarar el comportamiento transaccional de métodos dentro de servicios (o incluso en  repositorios, aunque es menos común). Permite que Spring gestione el ciclo de vida de la transacción subyacente sin que se tenga que escribir el código boilerplate para iniciar, confirmar o deshacer transacciones manualmente.
+
+Por defecto, cuando aplicas @Transactional a un método:
+1. Spring inicia una nueva transacción justo antes de la ejecución del método.
+2. Si el método se completa exitosamente (sin lanzar excepciones), Spring realiza un commit de la transacción al finalizar el método.
+3. Si el método lanza una RuntimeException o un Error que no está configurado para ser ignorado, Spring realiza un rollback de la transacción.
+4. Las excepciones checked no provocan un rollback por defecto
+
+> Atributos de @Transactional
+- timeout: Especifica el tiempo máximo en segundos que la transacción puede ejecutarse antes de que el administrador de transacciones la haga rollback automáticamente. Esto ayuda a prevenir que las transacciones se queden bloqueadas indefinidamente.
+
+- readOnly: Una sugerencia de optimización para el proveedor de transacciones. Si se establece en true, indica que la transacción solo realizará operaciones de lectura. Algunos proveedores pueden usar esta información para optimizar el rendimiento (por ejemplo, evitando la adquisición de bloqueos de escritura)
+
+- rollbackFor: Un array de clases de excepción que, cuando se lanzan desde el método anotado, forzarán un rollback de la transacción. Por defecto, solo RuntimeException y Error causan rollback. Puedes especificar excepciones checked si quieres que también provoquen rollback.
+
+- noRollbackFor: Un array de clases de excepción que, cuando se lanzan desde el método anotado, no provocarán un rollback de la transacción, incluso si están en la lista de rollbackFor o son RuntimeException o Error. Esto es útil para situaciones donde quieres capturar y manejar ciertas excepciones sin deshacer la transacción.
+
+- isolation: Este atributo especifica el nivel de aislamiento de la transacción, controlando cómo las transacciones concurrentes interactúan entre sí. Es importante elegir el nivel de aislamiento adecuado para equilibrar la consistencia de los datos y la concurrencia.
+
+    1. Isolation.DEFAULT: Utiliza el nivel de aislamiento predeterminado configurado en la fuente de datos o el administrador de transacciones.
+
+    2. Isolation.READ_UNCOMMITTED (Nivel más bajo): Permite que una transacción vea los cambios no confirmados realizados por otras transacciones (lecturas sucias). Generalmente no se recomienda debido a los problemas de integridad que puede causar.
+
+    3. Isolation.READ_COMMITTED: Asegura que una transacción solo vea los datos que han sido confirmados por otras transacciones. Evita las lecturas sucias, pero puede haber lecturas no repetibles y lecturas fantasma.
+
+    4. Isolation.REPEATABLE_READ: Garantiza que si una transacción lee la misma fila varias veces, siempre verá los mismos datos (a menos que la propia transacción los modifique). Evita las lecturas sucias y las lecturas no repetibles, pero aún pueden ocurrir lecturas fantasma.
+
+    5. Isolation.SERIALIZABLE (Nivel más alto): Proporciona el aislamiento más estricto, simulando una ejecución serial de las transacciones. Evita las lecturas sucias, las lecturas no repetibles y las lecturas fantasma, pero puede reducir la concurrencia.
+  
 
 <a id="manejo-de-excepciones"><a/>
 ### Manejo de excepciones de Spring Data JPA
+Spring Data JPA abstrae las excepciones específicas del proveedor de JPA a una jerarquía de excepciones más general y consistente **definida en org.springframework.dao**. Comprender esta jerarquía es crucial para escribir código robusto que pueda manejar errores de acceso a datos de manera efectiva.
+
+Jerarquía de Excepciones de org.springframework.dao:
+
+1. DataAccessException (Abstracta): La superclase de todas las excepciones de acceso a datos de Spring. Sirve como una marca para identificar problemas en la capa de datos.
+
+2. NonTransientDataAccessException (Abstracta): Indica que el error no es temporal; es probable que la operación falle de nuevo sin intervención.
+
+    - DataAccessResourceFailureException: Problema al obtener o acceder a un recurso necesario (conexión a la base de datos, archivo, etc.).
+
+    - DataIntegrityViolationException: Violación de una restricción de integridad de la base de datos (clave primaria duplicada, violación de clave foránea, restricción de unicidad, etc.).
+
+    - InvalidDataAccessApiUsageException: Uso incorrecto de la API de acceso a datos (intentar guardar una entidad no gestionada, etc.).
+
+3. TransientDataAccessException (Abstracta): Indica que el error podría ser temporal y la operación podría tener éxito si se reintenta.
+
+    - ConcurrencyFailureException: Fallo debido a la concurrencia (conflicto de bloqueo optimista, etc.).
+
+    - QueryTimeoutException: La consulta tardó demasiado en ejecutarse y se agotó el tiempo de espera.
+
+4. IncorrectResultSizeDataAccessException: La consulta devolvió un número de resultados diferente al esperado.
+
+    - EmptyResultDataAccessException: Se esperaba al menos un resultado, pero no se encontró ninguno. Útil cuando se usa orElseThrow() en operaciones de búsqueda.
+   
+5. OptimisticLockingFailureException: Una subclase específica de ConcurrencyFailureException que indica un fallo en el mecanismo de bloqueo optimista.
+
+> Ejemplo
+```
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/usuarios")
+public class UsuarioController {
+
+    @Autowired
+    private UsuarioService usuarioService;
+
+    @PostMapping
+    public ResponseEntity<?> crearUsuario(@RequestBody Usuario usuario) {
+        try {
+            usuarioService.guardarNuevoUsuario(usuario);
+            return new ResponseEntity<>(HttpStatus.CREATED);
+        } catch (DataIntegrityViolationException e) {
+            return new ResponseEntity<>("El email ya existe", HttpStatus.CONFLICT);
+        }
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Usuario> obtenerUsuario(@PathVariable Long id) {
+        try {
+            Usuario usuario = usuarioService.obtenerUsuarioPorId(id);
+            return new ResponseEntity<>(usuario, HttpStatus.OK);
+        } catch (EmptyResultDataAccessException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    // ... otros métodos ...
+}
+```
+En este ejemplo, el controlador maneja DataIntegrityViolationException (para el caso de email duplicado) y EmptyResultDataAccessException (para el caso de usuario no encontrado) y devuelve respuestas HTTP apropiadas.
+
